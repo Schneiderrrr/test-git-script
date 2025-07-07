@@ -3,19 +3,12 @@ name: 'Deploy to pre-demo & demo'
 
 on:
   workflow_dispatch:
-    inputs:
-      confirm:
-        description: 'Confirm execution typing "start"'
-        required: true
-        default: 'no'
 
 jobs:
   # --- Task 1: Merge from dev to pre-demo ---
   merge-dev-to-pre-demo:
     name: '1. Merge dev -> pre-demo'
     runs-on: ubuntu-latest
-
-    if: github.event.inputs.confirm == 'start'
 
     # Allow pushing
     permissions:
