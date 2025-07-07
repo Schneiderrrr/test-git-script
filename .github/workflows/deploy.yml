@@ -1,0 +1,88 @@
+name: 'Deploy to pre-demo & demo'
+
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Confirm execution typing "start"'
+        required: true
+        default: 'no'
+
+jobs:
+  # --- Task 1: Merge from dev to pre-demo ---
+  merge-dev-to-pre-demo:
+    name: '1. Merge dev -> pre-demo'
+    runs-on: ubuntu-latest
+
+    if: github.event.inputs.confirm == 'start'
+
+    # Allow to push
+    permissions:
+      contents: write
+
+    steps:
+      # Step 1: Check out the repository
+      - name: 'Checkout repository'
+        uses: actions/checkout@v4
+        with:
+          # We are going to push, so we need to create a full clone
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 'Git adjustments'
+        run: |
+          git config --global user.name 'GitHub Actions Bot'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+
+      - name: 'Merge dev to pre-demo'
+        run: |
+          # Go to the target brunch
+          git checkout pre-demo
+          # Pull latest changes
+          git pull origin pre-demo
+          # Merge. Flag --no-ff creates merge-commit.
+          # Flag --no-edit uses standard commit message.
+          echo "Merging dev into pre-demo..."
+          git merge origin/dev --no-ff --no-edit
+          # If there will be conflicts, script will be fallen here.
+
+      - name: 'Push to pre-demo'
+        run: |
+          echo "Pushing changes to pre-demo..."
+          git push origin pre-demo
+
+  # --- Task 2: Merge pre-demo to demo ---
+  merge-pre-demo-to-demo:
+    name: '2. Merge pre-demo -> demo'
+    runs-on: ubuntu-latest
+
+    # Need prevoius task was succesfull
+    needs: merge-dev-to-pre-demo
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: 'Check out the repository'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 'Git adjustments'
+        run: |
+          git config --global user.name 'GitHub Actions Bot'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+
+      - name: 'Merge pre-demo to demo'
+        run: |
+          git checkout demo
+          git pull origin demo
+          echo "Merging pre-demo into demo..."
+          git merge origin/pre-demo --no-ff --no-edit
+
+      - name: 'Push to demo'
+        run: |
+          echo "Pushing changes to demo..."
+          git push origin demo
