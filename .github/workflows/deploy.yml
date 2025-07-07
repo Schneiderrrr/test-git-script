@@ -3,19 +3,12 @@ name: 'Deploy to pre-demo & demo'
 
 on:
   workflow_dispatch:
-    inputs:
-      confirm:
-        description: 'Confirm execution typing "start"'
-        required: true
-        default: 'no'
 
 jobs:
   # --- Task 1: Merge from dev to pre-demo ---
   merge-dev-to-pre-demo:
     name: '1. Merge dev -> pre-demo'
     runs-on: ubuntu-latest
-
-    if: github.event.inputs.confirm == 'start'
 
     # Allow pushing
     permissions:
@@ -37,14 +30,14 @@ jobs:
 
       - name: 'Merge dev to pre-demo'
         run: |
-          # Go to the target brunch
           git checkout pre-demo
-          # Pull latest changes
           git pull origin pre-demo
+          echo "Merging dev into pre-demo..."
+          
           # Merge. Flag --no-ff creates merge-commit.
           # Flag --no-edit uses standard commit message.
-          echo "Merging dev into pre-demo..."
           git merge origin/dev --no-ff --no-edit
+          
           # If there will be conflicts, script will be fallen here.
 
       - name: 'Push to pre-demo'
