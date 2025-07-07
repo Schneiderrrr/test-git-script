@@ -17,7 +17,7 @@ jobs:
 
     if: github.event.inputs.confirm == 'start'
 
-    # Allow to push
+    # Allow pushing
     permissions:
       contents: write
 
@@ -57,7 +57,7 @@ jobs:
     name: '2. Merge pre-demo -> demo'
     runs-on: ubuntu-latest
 
-    # Need prevoius task was succesfull
+    # Need previous task was successful
     needs: merge-dev-to-pre-demo
 
     permissions:
