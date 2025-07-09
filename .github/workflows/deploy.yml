@@ -29,7 +29,7 @@ jobs:
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
 
       - name: 'Setup GitHub CLI'
-        uses: cli/gh-action@v2
+        uses: cli/cli-action@v2
 
       - name: 'Create PR from dev to pre-demo'
         id: pre-demo-pr
@@ -80,7 +80,7 @@ jobs:
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
 
       - name: Setup GitHub CLI
-        uses: cli/gh-action@v2
+        uses: cli/cli-action@v2
 
       - name: 'Create PR from pre-demo to demo'
         id: demo-pr
