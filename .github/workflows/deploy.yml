@@ -1,6 +1,5 @@
 name: 'Deploy to pre-demo & demo'
 
-
 on:
   workflow_dispatch:
 
@@ -13,6 +12,7 @@ jobs:
     # Allow pushing
     permissions:
       contents: write
+      pull-requests: write
 
     steps:
       # Step 1: Check out the repository
@@ -21,29 +21,100 @@ jobs:
         with:
           # We are going to push, so we need to create a full clone
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GH_PAT }}
 
       - name: 'Git adjustments'
         run: |
           git config --global user.name 'GitHub Actions Bot'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
 
-      - name: 'Merge dev to pre-demo'
+      - name: 'Create PR from dev to pre-demo'
+        id: pre-demo-pr
         run: |
-          git checkout pre-demo
-          git pull origin pre-demo
-          echo "Merging dev into pre-demo..."
+          set -e
+          # Проверяем, существует ли уже PR
+          EXISTING_PR=$(gh pr list --base pre-demo --head dev --state open --json number --jq '.[0].number // empty')
           
-          # Merge. Flag --no-ff creates merge-commit.
-          # Flag --no-edit uses standard commit message.
-          git merge origin/dev --no-ff --no-edit
-          
-          # If there will be conflicts, script will be fallen here.
+          if [ -n "$EXISTING_PR" ]; then
+            echo "PR already exists: $EXISTING_PR"
+            echo "pr_number=$EXISTING_PR" >> $GITHUB_OUTPUT
+          else
+            gh pr create --base pre-demo --head dev --title "Opening PR dev to pre-demo" --body "PR dev to pre-demo"
+            PR_NUMBER=$(gh pr list --base pre-demo --head dev --state open --json number --jq '.[0].number')
+            echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
 
-      - name: 'Push to pre-demo'
+      - name: 'Get PR HEAD SHA'
+        id: pr-sha
         run: |
-          echo "Pushing changes to pre-demo..."
-          git push origin pre-demo
+          PR_SHA=$(gh pr view ${{ steps.pre-demo-pr.outputs.pr_number }} --json headRefOid -q .headRefOid)
+          echo "sha=$PR_SHA" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+
+      - name: 'Wait for checks to complete (excluding current workflow)'
+        run: |
+          echo "Waiting for checks to complete on commit ${{ steps.pr-sha.outputs.sha }}..."
+          TIMEOUT=1800 # 30 минут
+          INTERVAL=30  # 30 секунд между проверками
+          ELAPSED=0
+          
+          # Исключаем текущий воркфлоу по имени джобы и ID run
+          CURRENT_JOB_NAME="1. Merge dev -> pre-demo"
+          CURRENT_RUN_ID="${{ github.run_id }}"
+          
+          while [ $ELAPSED -lt $TIMEOUT ]; do
+            # Получаем check runs для коммита, исключая текущий воркфлоу
+            CHECK_RUNS=$(gh api repos/${{ github.repository }}/commits/${{ steps.pr-sha.outputs.sha }}/check-runs --jq '.check_runs[] | select(.name != "'"$CURRENT_JOB_NAME"'" and (.external_id // "") != "'"$CURRENT_RUN_ID"'")')
+          
+            if [ -z "$CHECK_RUNS" ]; then
+              echo "No relevant check runs found (excluding current workflow), proceeding..."
+              break
+            fi
+          
+            # Подсчитываем статусы
+            TOTAL_CHECKS=$(echo "$CHECK_RUNS" | jq -s 'length')
+            COMPLETED_CHECKS=$(echo "$CHECK_RUNS" | jq -s '[.[] | select(.status == "completed")] | length')
+            QUEUED_CHECKS=$(echo "$CHECK_RUNS" | jq -s '[.[] | select(.status == "queued")] | length')
+            IN_PROGRESS_CHECKS=$(echo "$CHECK_RUNS" | jq -s '[.[] | select(.status == "in_progress")] | length')
+          
+            echo "Check runs status (excluding current workflow): $COMPLETED_CHECKS/$TOTAL_CHECKS completed, $QUEUED_CHECKS queued, $IN_PROGRESS_CHECKS in progress"
+          
+            # Показать какие проверки еще выполняются
+            if [ "$QUEUED_CHECKS" -gt 0 ] || [ "$IN_PROGRESS_CHECKS" -gt 0 ]; then
+              echo "Active checks:"
+              echo "$CHECK_RUNS" | jq -r 'select(.status != "completed") | "- \(.name): \(.status)"'
+            fi
+          
+            # Если все проверки завершены (неважно с каким результатом)
+            if [ "$COMPLETED_CHECKS" -eq "$TOTAL_CHECKS" ]; then
+              echo "All relevant checks completed! Proceeding with merge..."
+          
+              # Покажем результаты для информации
+              echo "Check results:"
+              echo "$CHECK_RUNS" | jq -r 'select(.status == "completed") | "- \(.name): \(.conclusion)"'
+              break
+            fi
+          
+            echo "Waiting for $((TOTAL_CHECKS - COMPLETED_CHECKS)) checks to complete..."
+            sleep $INTERVAL
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+          
+          if [ $ELAPSED -ge $TIMEOUT ]; then
+            echo "Timeout waiting for checks to complete."
+            exit 1
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+
+      - name: 'Merge PR'
+        run: |
+          gh pr merge ${{ steps.pre-demo-pr.outputs.pr_number }} --merge --admin
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
 
   # --- Task 2: Merge pre-demo to demo ---
   merge-pre-demo-to-demo:
@@ -55,27 +126,104 @@ jobs:
 
     permissions:
       contents: write
+      pull-requests: write
 
     steps:
       - name: 'Check out the repository'
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GH_PAT }}
 
       - name: 'Git adjustments'
         run: |
           git config --global user.name 'GitHub Actions Bot'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
 
-      - name: 'Merge pre-demo to demo'
+      - name: 'Create PR from pre-demo to demo'
+        id: demo-pr
         run: |
-          git checkout demo
-          git pull origin demo
-          echo "Merging pre-demo into demo..."
-          git merge origin/pre-demo --no-ff --no-edit
+          set -e
+          # Проверяем, существует ли уже PR
+          EXISTING_PR=$(gh pr list --base demo --head pre-demo --state open --json number --jq '.[0].number // empty')
+          
+          if [ -n "$EXISTING_PR" ]; then
+            echo "PR already exists: $EXISTING_PR"
+            echo "pr_number=$EXISTING_PR" >> $GITHUB_OUTPUT
+          else
+            gh pr create --base demo --head pre-demo --title "Opening PR pre-demo to demo" --body "PR pre-demo to demo"
+            PR_NUMBER=$(gh pr list --base demo --head pre-demo --state open --json number --jq '.[0].number')
+            echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
 
-      - name: 'Push to demo'
+      - name: 'Get PR HEAD SHA'
+        id: pr-sha
         run: |
-          echo "Pushing changes to demo..."
-          git push origin demo
+          PR_SHA=$(gh pr view ${{ steps.demo-pr.outputs.pr_number }} --json headRefOid -q .headRefOid)
+          echo "sha=$PR_SHA" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+
+      - name: 'Wait for checks to complete (excluding current workflow)'
+        run: |
+          echo "Waiting for checks to complete on commit ${{ steps.pr-sha.outputs.sha }}..."
+          TIMEOUT=1800 # 30 минут
+          INTERVAL=30  # 30 секунд между проверками
+          ELAPSED=0
+          
+          # Исключаем текущий воркфлоу по имени джобы и ID run
+          CURRENT_JOB_NAME="2. Merge pre-demo -> demo"
+          CURRENT_RUN_ID="${{ github.run_id }}"
+          
+          while [ $ELAPSED -lt $TIMEOUT ]; do
+            # Получаем check runs для коммита, исключая текущий воркфлоу
+            CHECK_RUNS=$(gh api repos/${{ github.repository }}/commits/${{ steps.pr-sha.outputs.sha }}/check-runs --jq '.check_runs[] | select(.name != "'"$CURRENT_JOB_NAME"'" and (.external_id // "") != "'"$CURRENT_RUN_ID"'")')
+          
+            if [ -z "$CHECK_RUNS" ]; then
+              echo "No relevant check runs found (excluding current workflow), proceeding..."
+              break
+            fi
+          
+            # Подсчитываем статусы
+            TOTAL_CHECKS=$(echo "$CHECK_RUNS" | jq -s 'length')
+            COMPLETED_CHECKS=$(echo "$CHECK_RUNS" | jq -s '[.[] | select(.status == "completed")] | length')
+            QUEUED_CHECKS=$(echo "$CHECK_RUNS" | jq -s '[.[] | select(.status == "queued")] | length')
+            IN_PROGRESS_CHECKS=$(echo "$CHECK_RUNS" | jq -s '[.[] | select(.status == "in_progress")] | length')
+          
+            echo "Check runs status (excluding current workflow): $COMPLETED_CHECKS/$TOTAL_CHECKS completed, $QUEUED_CHECKS queued, $IN_PROGRESS_CHECKS in progress"
+          
+            # Показать какие проверки еще выполняются
+            if [ "$QUEUED_CHECKS" -gt 0 ] || [ "$IN_PROGRESS_CHECKS" -gt 0 ]; then
+              echo "Active checks:"
+              echo "$CHECK_RUNS" | jq -r 'select(.status != "completed") | "- \(.name): \(.status)"'
+            fi
+          
+            # Если все проверки завершены (неважно с каким результатом)
+            if [ "$COMPLETED_CHECKS" -eq "$TOTAL_CHECKS" ]; then
+              echo "All relevant checks completed! Proceeding with merge..."
+          
+              # Покажем результаты для информации
+              echo "Check results:"
+              echo "$CHECK_RUNS" | jq -r 'select(.status == "completed") | "- \(.name): \(.conclusion)"'
+              break
+            fi
+          
+            echo "Waiting for $((TOTAL_CHECKS - COMPLETED_CHECKS)) checks to complete..."
+            sleep $INTERVAL
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+          
+          if [ $ELAPSED -ge $TIMEOUT ]; then
+            echo "Timeout waiting for checks to complete."
+            exit 1
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+
+      - name: 'Merge PR'
+        run: |
+          gh pr merge ${{ steps.demo-pr.outputs.pr_number }} --merge --admin
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
