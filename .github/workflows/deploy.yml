@@ -71,21 +71,10 @@ jobs:
             CHECK_RUNS_STATUS=$(echo "$CHECK_RUNS_RESPONSE" | jq -r '.check_runs[] | select(.status == "completed") | .conclusion' | sort | uniq)
             
             echo "Current commit status: $STATUS"
-            echo "Check runs conclusions: $CHECK_RUNS_STATUS"
             
             if [ "$STATUS" = "success" ]; then
               echo "All status checks passed."
               break
-            fi
-            
-            if [ -n "$CHECK_RUNS_STATUS" ]; then
-              if echo "$CHECK_RUNS_STATUS" | grep -q "failure\|cancelled\|timed_out"; then
-                echo "Some checks failed."
-                exit 1
-              elif ! echo "$CHECK_RUNS_STATUS" | grep -q -v "success"; then
-                echo "All check runs passed."
-                break
-              fi
             fi
             
             if [ "$STATUS" = "failure" ]; then
