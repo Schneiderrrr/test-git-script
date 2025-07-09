@@ -74,7 +74,7 @@ jobs:
           while [ $ELAPSED -lt $TIMEOUT ]; do
             # Получаем все workflow runs для "Continuous Integration and Deployment"
             # которые были запущены после нашего референсного времени
-            WORKFLOW_RUNS=$(gh api repos/${{ github.repository }}/actions/workflows/ci-cd.yml/runs \
+            WORKFLOW_RUNS=$(gh api repos/${{ github.repository }}/actions/workflows/generic-ci-cd.yml/runs \
               --jq '.workflow_runs[] | select(.created_at >= "'"$REFERENCE_TIME"'")')
             
             if [ -z "$WORKFLOW_RUNS" ]; then
