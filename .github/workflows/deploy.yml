@@ -54,40 +54,48 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
 
-      - name: 'Wait for checks to complete (not necessarily pass)'
+      - name: 'Wait for checks to complete (excluding current workflow)'
         run: |
           echo "Waiting for checks to complete on commit ${{ steps.pr-sha.outputs.sha }}..."
           TIMEOUT=1800 # 30 минут
           INTERVAL=30  # 30 секунд между проверками
           ELAPSED=0
           
+          CURRENT_WORKFLOW_NAME="Deploy to pre-demo & demo"
+          
           while [ $ELAPSED -lt $TIMEOUT ]; do
-            # Получаем check runs для коммита
-            CHECK_RUNS=$(gh api repos/${{ github.repository }}/commits/${{ steps.pr-sha.outputs.sha }}/check-runs --jq '.check_runs[]')
-            
+            # Получаем check runs для коммита, исключая текущий воркфлоу
+            CHECK_RUNS=$(gh api repos/${{ github.repository }}/commits/${{ steps.pr-sha.outputs.sha }}/check-runs --jq '.check_runs[] | select(.name != "'"$CURRENT_WORKFLOW_NAME"'")')
+          
             if [ -z "$CHECK_RUNS" ]; then
-              echo "No check runs found, proceeding..."
+              echo "No relevant check runs found (excluding current workflow), proceeding..."
               break
             fi
-            
+          
             # Подсчитываем статусы
             TOTAL_CHECKS=$(echo "$CHECK_RUNS" | jq -s 'length')
             COMPLETED_CHECKS=$(echo "$CHECK_RUNS" | jq -s '[.[] | select(.status == "completed")] | length')
             QUEUED_CHECKS=$(echo "$CHECK_RUNS" | jq -s '[.[] | select(.status == "queued")] | length')
             IN_PROGRESS_CHECKS=$(echo "$CHECK_RUNS" | jq -s '[.[] | select(.status == "in_progress")] | length')
-            
-            echo "Check runs status: $COMPLETED_CHECKS/$TOTAL_CHECKS completed, $QUEUED_CHECKS queued, $IN_PROGRESS_CHECKS in progress"
-            
+          
+            echo "Check runs status (excluding current workflow): $COMPLETED_CHECKS/$TOTAL_CHECKS completed, $QUEUED_CHECKS queued, $IN_PROGRESS_CHECKS in progress"
+          
+            # Показать какие проверки еще выполняются
+            if [ "$QUEUED_CHECKS" -gt 0 ] || [ "$IN_PROGRESS_CHECKS" -gt 0 ]; then
+              echo "Active checks:"
+              echo "$CHECK_RUNS" | jq -r 'select(.status != "completed") | "- \(.name): \(.status)"'
+            fi
+          
             # Если все проверки завершены (неважно с каким результатом)
             if [ "$COMPLETED_CHECKS" -eq "$TOTAL_CHECKS" ]; then
-              echo "All checks completed! Proceeding with merge..."
-              
+              echo "All relevant checks completed! Proceeding with merge..."
+          
               # Покажем результаты для информации
               echo "Check results:"
               echo "$CHECK_RUNS" | jq -r 'select(.status == "completed") | "- \(.name): \(.conclusion)"'
               break
             fi
-            
+          
             echo "Waiting for $((TOTAL_CHECKS - COMPLETED_CHECKS)) checks to complete..."
             sleep $INTERVAL
             ELAPSED=$((ELAPSED + INTERVAL))
@@ -156,40 +164,48 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
 
-      - name: 'Wait for checks to complete (not necessarily pass)'
+      - name: 'Wait for checks to complete (excluding current workflow)'
         run: |
           echo "Waiting for checks to complete on commit ${{ steps.pr-sha.outputs.sha }}..."
           TIMEOUT=1800 # 30 минут
           INTERVAL=30  # 30 секунд между проверками
           ELAPSED=0
           
+          CURRENT_WORKFLOW_NAME="Deploy to pre-demo & demo"
+          
           while [ $ELAPSED -lt $TIMEOUT ]; do
-            # Получаем check runs для коммита
-            CHECK_RUNS=$(gh api repos/${{ github.repository }}/commits/${{ steps.pr-sha.outputs.sha }}/check-runs --jq '.check_runs[]')
-            
+            # Получаем check runs для коммита, исключая текущий воркфлоу
+            CHECK_RUNS=$(gh api repos/${{ github.repository }}/commits/${{ steps.pr-sha.outputs.sha }}/check-runs --jq '.check_runs[] | select(.name != "'"$CURRENT_WORKFLOW_NAME"'")')
+          
             if [ -z "$CHECK_RUNS" ]; then
-              echo "No check runs found, proceeding..."
+              echo "No relevant check runs found (excluding current workflow), proceeding..."
               break
             fi
-            
+          
             # Подсчитываем статусы
             TOTAL_CHECKS=$(echo "$CHECK_RUNS" | jq -s 'length')
             COMPLETED_CHECKS=$(echo "$CHECK_RUNS" | jq -s '[.[] | select(.status == "completed")] | length')
             QUEUED_CHECKS=$(echo "$CHECK_RUNS" | jq -s '[.[] | select(.status == "queued")] | length')
             IN_PROGRESS_CHECKS=$(echo "$CHECK_RUNS" | jq -s '[.[] | select(.status == "in_progress")] | length')
-            
-            echo "Check runs status: $COMPLETED_CHECKS/$TOTAL_CHECKS completed, $QUEUED_CHECKS queued, $IN_PROGRESS_CHECKS in progress"
-            
+          
+            echo "Check runs status (excluding current workflow): $COMPLETED_CHECKS/$TOTAL_CHECKS completed, $QUEUED_CHECKS queued, $IN_PROGRESS_CHECKS in progress"
+          
+            # Показать какие проверки еще выполняются
+            if [ "$QUEUED_CHECKS" -gt 0 ] || [ "$IN_PROGRESS_CHECKS" -gt 0 ]; then
+              echo "Active checks:"
+              echo "$CHECK_RUNS" | jq -r 'select(.status != "completed") | "- \(.name): \(.status)"'
+            fi
+          
             # Если все проверки завершены (неважно с каким результатом)
             if [ "$COMPLETED_CHECKS" -eq "$TOTAL_CHECKS" ]; then
-              echo "All checks completed! Proceeding with merge..."
-              
+              echo "All relevant checks completed! Proceeding with merge..."
+          
               # Покажем результаты для информации
               echo "Check results:"
               echo "$CHECK_RUNS" | jq -r 'select(.status == "completed") | "- \(.name): \(.conclusion)"'
               break
             fi
-            
+          
             echo "Waiting for $((TOTAL_CHECKS - COMPLETED_CHECKS)) checks to complete..."
             sleep $INTERVAL
             ELAPSED=$((ELAPSED + INTERVAL))
