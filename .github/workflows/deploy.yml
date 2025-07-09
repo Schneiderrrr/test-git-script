@@ -28,22 +28,33 @@ jobs:
           git config --global user.name 'GitHub Actions Bot'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
 
-      - name: 'Merge dev to pre-demo'
-        run: |
-          git checkout pre-demo
-          git pull origin pre-demo
-          echo "Merging dev into pre-demo..."
-          
-          # Merge. Flag --no-ff creates merge-commit.
-          # Flag --no-edit uses standard commit message.
-          git merge origin/dev --no-ff --no-edit
-          
-          # If there will be conflicts, script will be fallen here.
+      - name: 'Setup GitHub CLI'
+        uses: cli/gh-action@v2
 
-      - name: 'Push to pre-demo'
+      - name: 'Create PR from dev to pre-demo'
+        id: pre-demo-pr
         run: |
-          echo "Pushing changes to pre-demo..."
-          git push origin pre-demo
+          set -e
+          gh pr create --base pre-demo --head dev --title "Opening PR dev to pre-demo"
+          PR_NUMBER=$(gh pr list --base pre-demo --head dev --state open --json number --jq '.[0].number')
+          echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+
+      - name: 'Get PR SHA'
+        id: pr-sha
+        run: |
+          PR_SHA=$(gh pr view ${{ steps.pre-demo-pr.outputs.pr_number }} --json headRefOid -q .headRefOid)
+          echo "sha=$PR_SHA" >> $GITHUB_OUTPUT
+
+      - name: 'Wait for checks to complete'
+        uses: WyriHaximus/github-action-wait-for-status@v1
+        with:
+          sha: ${{ steps.pr-sha.outputs.sha }}
+          checkInterval: '30'
+          ignoreActions: ''
+
+      - name: 'Merge PR'
+        run: |
+          gh pr merge ${{ steps.pre-demo-pr.outputs.pr_number }} --no-ff --no-edit --merge --admin
 
   # --- Task 2: Merge pre-demo to demo ---
   merge-pre-demo-to-demo:
@@ -68,14 +79,17 @@ jobs:
           git config --global user.name 'GitHub Actions Bot'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
 
-      - name: 'Merge pre-demo to demo'
-        run: |
-          git checkout demo
-          git pull origin demo
-          echo "Merging pre-demo into demo..."
-          git merge origin/pre-demo --no-ff --no-edit
+      - name: Setup GitHub CLI
+        uses: cli/gh-action@v2
 
-      - name: 'Push to demo'
+      - name: 'Create PR from pre-demo to demo'
+        id: demo-pr
         run: |
-          echo "Pushing changes to demo..."
-          git push origin demo
+          set -e
+          gh pr create --base demo --head pre-demo --title "Opening PR pre-demo to demo"
+          PR_NUMBER=$(gh pr list --base demo --head pre-demo --state open --json number --jq '.[0].number')
+          echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+
+      - name: 'Merge PR'
+        run: |
+          gh pr merge ${{ steps.demo-pr.outputs.pr_number }} --merge --admin --no-ff --no-edit
