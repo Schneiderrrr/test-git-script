@@ -2,6 +2,7 @@ name: 🧪 Slow Test Check
 
 on:
   pull_request:
+    types: [opened, synchronize]
 
 jobs:
   slow-test:
