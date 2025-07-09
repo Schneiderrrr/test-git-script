@@ -1,4 +1,3 @@
-
 name: 'Deploy to pre-demo & demo'
 
 on:
@@ -39,10 +38,12 @@ jobs:
           if [ -n "$EXISTING_PR" ]; then
             echo "PR already exists: $EXISTING_PR"
             echo "pr_number=$EXISTING_PR" >> $GITHUB_OUTPUT
+            echo "pr_created=false" >> $GITHUB_OUTPUT
           else
             gh pr create --base pre-demo --head dev --title "Opening PR dev to pre-demo" --body "PR dev to pre-demo"
             PR_NUMBER=$(gh pr list --base pre-demo --head dev --state open --json number --jq '.[0].number')
             echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+            echo "pr_created=true" >> $GITHUB_OUTPUT
           fi
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
@@ -55,27 +56,27 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
 
-      - name: 'Wait for checks to complete (excluding current workflow)'
+      - name: 'Wait for checks to complete'
         run: |
           echo "Waiting for checks to complete on commit ${{ steps.pr-sha.outputs.sha }}..."
           TIMEOUT=1800 # 30 минут
           INTERVAL=30  # 30 секунд между проверками
           ELAPSED=0
           
+          # Получаем время начала нашего воркфлоу
+          WORKFLOW_START_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          echo "Workflow started at: $WORKFLOW_START_TIME"
+          
+          # Ждем немного, чтобы PR checks успели запуститься
+          echo "Waiting 10 seconds for PR checks to initialize..."
+          sleep 10
+          
           while [ $ELAPSED -lt $TIMEOUT ]; do
-            # Получаем все check runs для коммита
-            ALL_CHECKS=$(gh api repos/${{ github.repository }}/commits/${{ steps.pr-sha.outputs.sha }}/check-runs --jq '.check_runs[]')
-          
-            # Отладочная информация
-            echo "=== DEBUG: All check runs ==="
-            echo "$ALL_CHECKS" | jq -r '"Name: \(.name), Status: \(.status), External ID: \(.external_id // "null"), HTML URL: \(.html_url)"'
-            echo "=== END DEBUG ==="
-          
-            # Исключаем джобы текущего воркфлоу по имени
-            CHECK_RUNS=$(echo "$ALL_CHECKS" | jq 'select(.name != "1. Merge dev -> pre-demo" and .name != "2. Merge pre-demo -> demo")')
+            # Получаем check runs для коммита, созданные после начала нашего воркфлоу
+            CHECK_RUNS=$(gh api repos/${{ github.repository }}/commits/${{ steps.pr-sha.outputs.sha }}/check-runs --jq '.check_runs[] | select(.name != "1. Merge dev -> pre-demo" and .name != "2. Merge pre-demo -> demo" and .started_at >= "'"$WORKFLOW_START_TIME"'")')
           
             if [ -z "$CHECK_RUNS" ]; then
-              echo "No relevant check runs found (excluding current workflow), proceeding..."
+              echo "No relevant check runs found (started after workflow), proceeding..."
               break
             fi
           
@@ -85,12 +86,12 @@ jobs:
             QUEUED_CHECKS=$(echo "$CHECK_RUNS" | jq -s '[.[] | select(.status == "queued")] | length')
             IN_PROGRESS_CHECKS=$(echo "$CHECK_RUNS" | jq -s '[.[] | select(.status == "in_progress")] | length')
           
-            echo "Check runs status (excluding current workflow): $COMPLETED_CHECKS/$TOTAL_CHECKS completed, $QUEUED_CHECKS queued, $IN_PROGRESS_CHECKS in progress"
+            echo "Check runs status (started after $WORKFLOW_START_TIME): $COMPLETED_CHECKS/$TOTAL_CHECKS completed, $QUEUED_CHECKS queued, $IN_PROGRESS_CHECKS in progress"
           
             # Показать какие проверки еще выполняются
             if [ "$QUEUED_CHECKS" -gt 0 ] || [ "$IN_PROGRESS_CHECKS" -gt 0 ]; then
               echo "Active checks:"
-              echo "$CHECK_RUNS" | jq -r 'select(.status != "completed") | "- \(.name): \(.status)"'
+              echo "$CHECK_RUNS" | jq -r 'select(.status != "completed") | "- \(.name): \(.status) (started: \(.started_at))"'
             fi
           
             # Если все проверки завершены (неважно с каким результатом)
@@ -155,10 +156,12 @@ jobs:
           if [ -n "$EXISTING_PR" ]; then
             echo "PR already exists: $EXISTING_PR"
             echo "pr_number=$EXISTING_PR" >> $GITHUB_OUTPUT
+            echo "pr_created=false" >> $GITHUB_OUTPUT
           else
             gh pr create --base demo --head pre-demo --title "Opening PR pre-demo to demo" --body "PR pre-demo to demo"
             PR_NUMBER=$(gh pr list --base demo --head pre-demo --state open --json number --jq '.[0].number')
             echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+            echo "pr_created=true" >> $GITHUB_OUTPUT
           fi
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
@@ -171,27 +174,27 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
 
-      - name: 'Wait for checks to complete (excluding current workflow)'
+      - name: 'Wait for checks to complete'
         run: |
           echo "Waiting for checks to complete on commit ${{ steps.pr-sha.outputs.sha }}..."
           TIMEOUT=1800 # 30 минут
           INTERVAL=30  # 30 секунд между проверками
           ELAPSED=0
           
+          # Получаем время начала нашего воркфлоу
+          WORKFLOW_START_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          echo "Workflow started at: $WORKFLOW_START_TIME"
+          
+          # Ждем немного, чтобы PR checks успели запуститься
+          echo "Waiting 10 seconds for PR checks to initialize..."
+          sleep 10
+          
           while [ $ELAPSED -lt $TIMEOUT ]; do
-            # Получаем все check runs для коммита
-            ALL_CHECKS=$(gh api repos/${{ github.repository }}/commits/${{ steps.pr-sha.outputs.sha }}/check-runs --jq '.check_runs[]')
-          
-            # Отладочная информация
-            echo "=== DEBUG: All check runs ==="
-            echo "$ALL_CHECKS" | jq -r '"Name: \(.name), Status: \(.status), External ID: \(.external_id // "null"), HTML URL: \(.html_url)"'
-            echo "=== END DEBUG ==="
-          
-            # Исключаем джобы текущего воркфлоу по имени
-            CHECK_RUNS=$(echo "$ALL_CHECKS" | jq 'select(.name != "1. Merge dev -> pre-demo" and .name != "2. Merge pre-demo -> demo")')
+            # Получаем check runs для коммита, созданные после начала нашего воркфлоу
+            CHECK_RUNS=$(gh api repos/${{ github.repository }}/commits/${{ steps.pr-sha.outputs.sha }}/check-runs --jq '.check_runs[] | select(.name != "1. Merge dev -> pre-demo" and .name != "2. Merge pre-demo -> demo" and .started_at >= "'"$WORKFLOW_START_TIME"'")')
           
             if [ -z "$CHECK_RUNS" ]; then
-              echo "No relevant check runs found (excluding current workflow), proceeding..."
+              echo "No relevant check runs found (started after workflow), proceeding..."
               break
             fi
           
@@ -201,12 +204,12 @@ jobs:
             QUEUED_CHECKS=$(echo "$CHECK_RUNS" | jq -s '[.[] | select(.status == "queued")] | length')
             IN_PROGRESS_CHECKS=$(echo "$CHECK_RUNS" | jq -s '[.[] | select(.status == "in_progress")] | length')
           
-            echo "Check runs status (excluding current workflow): $COMPLETED_CHECKS/$TOTAL_CHECKS completed, $QUEUED_CHECKS queued, $IN_PROGRESS_CHECKS in progress"
+            echo "Check runs status (started after $WORKFLOW_START_TIME): $COMPLETED_CHECKS/$TOTAL_CHECKS completed, $QUEUED_CHECKS queued, $IN_PROGRESS_CHECKS in progress"
           
             # Показать какие проверки еще выполняются
             if [ "$QUEUED_CHECKS" -gt 0 ] || [ "$IN_PROGRESS_CHECKS" -gt 0 ]; then
               echo "Active checks:"
-              echo "$CHECK_RUNS" | jq -r 'select(.status != "completed") | "- \(.name): \(.status)"'
+              echo "$CHECK_RUNS" | jq -r 'select(.status != "completed") | "- \(.name): \(.status) (started: \(.started_at))"'
             fi
           
             # Если все проверки завершены (неважно с каким результатом)
