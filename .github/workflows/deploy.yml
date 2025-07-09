@@ -1,6 +1,5 @@
 name: 'Deploy to pre-demo & demo'
 
-
 on:
   workflow_dispatch:
 
@@ -13,6 +12,7 @@ jobs:
     # Allow pushing
     permissions:
       contents: write
+      pull-requests: write
 
     steps:
       # Step 1: Check out the repository
@@ -32,9 +32,17 @@ jobs:
         id: pre-demo-pr
         run: |
           set -e
-          gh pr create --base pre-demo --head dev --title "Opening PR dev to pre-demo" --body "PR dev to pre-demo"
-          PR_NUMBER=$(gh pr list --base pre-demo --head dev --state open --json number --jq '.[0].number')
-          echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+          # Check if pr is already existed
+          EXISTING_PR=$(gh pr list --base pre-demo --head dev --state open --json number --jq '.[0].number // empty')
+          
+          if [ -n "$EXISTING_PR" ]; then
+            echo "PR already exists: $EXISTING_PR"
+            echo "pr_number=$EXISTING_PR" >> $GITHUB_OUTPUT
+          else
+            gh pr create --base pre-demo --head dev --title "Opening PR dev to pre-demo" --body "PR dev to pre-demo"
+            PR_NUMBER=$(gh pr list --base pre-demo --head dev --state open --json number --jq '.[0].number')
+            echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+          fi
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
 
@@ -46,29 +54,64 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
 
-      - name: Wait for all checks to pass
+      - name: 'Wait for all checks to pass'
         run: |
           echo "Waiting for commit status checks to succeed..."
-          for i in {1..30}; do
-            STATUS=$(gh api repos/${{ github.repository }}/commits/${{ steps.pr-sha.outputs.sha }}/status --jq '.state')
-            echo "Current status: $STATUS"
+          TIMEOUT=300 # 5 min
+          INTERVAL=30  # 30 sec between checks
+          ELAPSED=0
+          
+          while [ $ELAPSED -lt $TIMEOUT ]; do
+            # Check status with combined status API
+            STATUS_RESPONSE=$(gh api repos/${{ github.repository }}/commits/${{ steps.pr-sha.outputs.sha }}/status)
+            STATUS=$(echo "$STATUS_RESPONSE" | jq -r '.state')
+            
+            # check runs (for GitHub Actions)
+            CHECK_RUNS_RESPONSE=$(gh api repos/${{ github.repository }}/commits/${{ steps.pr-sha.outputs.sha }}/check-runs)
+            CHECK_RUNS_STATUS=$(echo "$CHECK_RUNS_RESPONSE" | jq -r '.check_runs[] | select(.status == "completed") | .conclusion' | sort | uniq)
+            
+            echo "Current commit status: $STATUS"
+            echo "Check runs conclusions: $CHECK_RUNS_STATUS"
+            
             if [ "$STATUS" = "success" ]; then
-              echo "All checks passed."
-              exit 0
-            elif [ "$STATUS" = "failure" ]; then
-              echo "Checks failed."
+              echo "All status checks passed."
+              break
+            fi
+            
+            if [ -n "$CHECK_RUNS_STATUS" ]; then
+              if echo "$CHECK_RUNS_STATUS" | grep -q "failure\|cancelled\|timed_out"; then
+                echo "Some checks failed."
+                exit 1
+              elif ! echo "$CHECK_RUNS_STATUS" | grep -q -v "success"; then
+                echo "All check runs passed."
+                break
+              fi
+            fi
+            
+            if [ "$STATUS" = "failure" ]; then
+              echo "Status checks failed."
               exit 1
             fi
-            sleep 10
+            
+            if [ "$STATUS" = "pending" ] || [ -z "$STATUS" ]; then
+              echo "Checks are still pending... waiting $INTERVAL seconds"
+              sleep $INTERVAL
+              ELAPSED=$((ELAPSED + INTERVAL))
+            fi
           done
-          echo "Timeout waiting for checks to complete."
-          exit 1
+          
+          if [ $ELAPSED -ge $TIMEOUT ]; then
+            echo "Timeout waiting for checks to complete."
+            exit 1
+          fi
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
 
       - name: 'Merge PR'
         run: |
-          gh pr merge ${{ steps.pre-demo-pr.outputs.pr_number }} --no-ff --no-edit --merge --admin
+          gh pr merge ${{ steps.pre-demo-pr.outputs.pr_number }} --merge --admin
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
 
   # --- Task 2: Merge pre-demo to demo ---
   merge-pre-demo-to-demo:
@@ -80,13 +123,14 @@ jobs:
 
     permissions:
       contents: write
+      pull-requests: write
 
     steps:
       - name: 'Check out the repository'
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GH_PAT }}
 
       - name: 'Git adjustments'
         run: |
@@ -97,12 +141,21 @@ jobs:
         id: demo-pr
         run: |
           set -e
-          gh pr create --base demo --head pre-demo --title "Opening PR pre-demo to demo" --body "PR pre-demo to demo"
-          PR_NUMBER=$(gh pr list --base demo --head pre-demo --state open --json number --jq '.[0].number')
-          echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+          EXISTING_PR=$(gh pr list --base demo --head pre-demo --state open --json number --jq '.[0].number // empty')
+          
+          if [ -n "$EXISTING_PR" ]; then
+            echo "PR already exists: $EXISTING_PR"
+            echo "pr_number=$EXISTING_PR" >> $GITHUB_OUTPUT
+          else
+            gh pr create --base demo --head pre-demo --title "Opening PR pre-demo to demo" --body "PR pre-demo to demo"
+            PR_NUMBER=$(gh pr list --base demo --head pre-demo --state open --json number --jq '.[0].number')
+            echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+          fi
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
 
       - name: 'Merge PR'
         run: |
-          gh pr merge ${{ steps.demo-pr.outputs.pr_number }} --merge --admin --no-ff --no-edit
+          gh pr merge ${{ steps.demo-pr.outputs.pr_number }} --merge --admin
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
