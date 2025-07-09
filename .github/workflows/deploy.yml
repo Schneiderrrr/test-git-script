@@ -64,7 +64,7 @@ jobs:
           echo "Timeout waiting for checks to complete."
           exit 1
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
 
       - name: 'Merge PR'
         run: |
