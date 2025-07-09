@@ -32,7 +32,7 @@ jobs:
         id: pre-demo-pr
         run: |
           set -e
-          gh pr create --base pre-demo --head dev --title "Opening PR dev to pre-demo"
+          gh pr create --base pre-demo --head dev --title "Opening PR dev to pre-demo" --body "PR dev to pre-demo"
           PR_NUMBER=$(gh pr list --base pre-demo --head dev --state open --json number --jq '.[0].number')
           echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
         env:
@@ -82,7 +82,7 @@ jobs:
         id: demo-pr
         run: |
           set -e
-          gh pr create --base demo --head pre-demo --title "Opening PR pre-demo to demo"
+          gh pr create --base demo --head pre-demo --title "Opening PR pre-demo to demo" --body "PR pre-demo to demo"
           PR_NUMBER=$(gh pr list --base demo --head pre-demo --state open --json number --jq '.[0].number')
           echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
         env:
