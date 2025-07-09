@@ -47,7 +47,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_PAT }}
 
       - name: 'Wait for checks to complete'
-        uses: WyriHaximus/github-action-wait-for-status@v1
+        run: |
+          gh api repos/${{ github.repository }}/commits/${{ github.sha }}/status \
+            --jq '.state' | grep -q 'success'
         with:
           checkInterval: 30
           ignoreActions: ''
