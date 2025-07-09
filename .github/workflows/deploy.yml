@@ -32,7 +32,7 @@ jobs:
         id: pre-demo-pr
         run: |
           set -e
-          # Check if pr is already existed
+          # Проверяем, существует ли уже PR
           EXISTING_PR=$(gh pr list --base pre-demo --head dev --state open --json number --jq '.[0].number // empty')
           
           if [ -n "$EXISTING_PR" ]; then
@@ -46,7 +46,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
 
-      - name: 'Get PR SHA'
+      - name: 'Get PR HEAD SHA'
         id: pr-sha
         run: |
           PR_SHA=$(gh pr view ${{ steps.pre-demo-pr.outputs.pr_number }} --json headRefOid -q .headRefOid)
@@ -54,47 +54,14 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
 
-      - name: 'Wait for all checks to pass'
-        run: |
-          echo "Waiting for commit status checks to succeed..."
-          TIMEOUT=300 # 5 min
-          INTERVAL=30  # 30 sec between checks
-          ELAPSED=0
-          
-          while [ $ELAPSED -lt $TIMEOUT ]; do
-            # Check status with combined status API
-            STATUS_RESPONSE=$(gh api repos/${{ github.repository }}/commits/${{ steps.pr-sha.outputs.sha }}/status)
-            STATUS=$(echo "$STATUS_RESPONSE" | jq -r '.state')
-            
-            # check runs (for GitHub Actions)
-            CHECK_RUNS_RESPONSE=$(gh api repos/${{ github.repository }}/commits/${{ steps.pr-sha.outputs.sha }}/check-runs)
-            CHECK_RUNS_STATUS=$(echo "$CHECK_RUNS_RESPONSE" | jq -r '.check_runs[] | select(.status == "completed") | .conclusion' | sort | uniq)
-            
-            echo "Current commit status: $STATUS"
-            
-            if [ "$STATUS" = "success" ]; then
-              echo "All status checks passed."
-              break
-            fi
-            
-            if [ "$STATUS" = "failure" ]; then
-              echo "Status checks failed."
-              exit 1
-            fi
-            
-            if [ "$STATUS" = "pending" ] || [ -z "$STATUS" ]; then
-              echo "Checks are still pending... waiting $INTERVAL seconds"
-              sleep $INTERVAL
-              ELAPSED=$((ELAPSED + INTERVAL))
-            fi
-          done
-          
-          if [ $ELAPSED -ge $TIMEOUT ]; then
-            echo "Timeout waiting for checks to complete."
-            exit 1
-          fi
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
+      - name: 'Wait for status checks'
+        uses: lewagon/wait-on-check-action@v1.3.1
+        with:
+          ref: ${{ steps.pr-sha.outputs.sha }}
+          repo-token: ${{ secrets.GH_PAT }}
+          wait-interval: 30
+          running-workflow-name: 'Deploy to pre-demo & demo'
+          allowed-conclusions: success,skipped,neutral
 
       - name: 'Merge PR'
         run: |
@@ -130,6 +97,7 @@ jobs:
         id: demo-pr
         run: |
           set -e
+          # Проверяем, существует ли уже PR
           EXISTING_PR=$(gh pr list --base demo --head pre-demo --state open --json number --jq '.[0].number // empty')
           
           if [ -n "$EXISTING_PR" ]; then
@@ -142,6 +110,23 @@ jobs:
           fi
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
+
+      - name: 'Get PR HEAD SHA'
+        id: pr-sha
+        run: |
+          PR_SHA=$(gh pr view ${{ steps.demo-pr.outputs.pr_number }} --json headRefOid -q .headRefOid)
+          echo "sha=$PR_SHA" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+
+      - name: 'Wait for status checks'
+        uses: lewagon/wait-on-check-action@v1.3.1
+        with:
+          ref: ${{ steps.pr-sha.outputs.sha }}
+          repo-token: ${{ secrets.GH_PAT }}
+          wait-interval: 30
+          running-workflow-name: 'Deploy to pre-demo & demo'
+          allowed-conclusions: success,skipped,neutral
 
       - name: 'Merge PR'
         run: |
