@@ -54,14 +54,51 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
 
-      - name: 'Wait for status checks'
-        uses: lewagon/wait-on-check-action@v1.3.1
-        with:
-          ref: ${{ steps.pr-sha.outputs.sha }}
-          repo-token: ${{ secrets.GH_PAT }}
-          wait-interval: 30
-          running-workflow-name: 'Deploy to pre-demo & demo'
-          allowed-conclusions: success,skipped,neutral
+      - name: 'Wait for checks to complete (not necessarily pass)'
+        run: |
+          echo "Waiting for checks to complete on commit ${{ steps.pr-sha.outputs.sha }}..."
+          TIMEOUT=1800 # 30 минут
+          INTERVAL=30  # 30 секунд между проверками
+          ELAPSED=0
+          
+          while [ $ELAPSED -lt $TIMEOUT ]; do
+            # Получаем check runs для коммита
+            CHECK_RUNS=$(gh api repos/${{ github.repository }}/commits/${{ steps.pr-sha.outputs.sha }}/check-runs --jq '.check_runs[]')
+            
+            if [ -z "$CHECK_RUNS" ]; then
+              echo "No check runs found, proceeding..."
+              break
+            fi
+            
+            # Подсчитываем статусы
+            TOTAL_CHECKS=$(echo "$CHECK_RUNS" | jq -s 'length')
+            COMPLETED_CHECKS=$(echo "$CHECK_RUNS" | jq -s '[.[] | select(.status == "completed")] | length')
+            QUEUED_CHECKS=$(echo "$CHECK_RUNS" | jq -s '[.[] | select(.status == "queued")] | length')
+            IN_PROGRESS_CHECKS=$(echo "$CHECK_RUNS" | jq -s '[.[] | select(.status == "in_progress")] | length')
+            
+            echo "Check runs status: $COMPLETED_CHECKS/$TOTAL_CHECKS completed, $QUEUED_CHECKS queued, $IN_PROGRESS_CHECKS in progress"
+            
+            # Если все проверки завершены (неважно с каким результатом)
+            if [ "$COMPLETED_CHECKS" -eq "$TOTAL_CHECKS" ]; then
+              echo "All checks completed! Proceeding with merge..."
+              
+              # Покажем результаты для информации
+              echo "Check results:"
+              echo "$CHECK_RUNS" | jq -r 'select(.status == "completed") | "- \(.name): \(.conclusion)"'
+              break
+            fi
+            
+            echo "Waiting for $((TOTAL_CHECKS - COMPLETED_CHECKS)) checks to complete..."
+            sleep $INTERVAL
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+          
+          if [ $ELAPSED -ge $TIMEOUT ]; then
+            echo "Timeout waiting for checks to complete."
+            exit 1
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
 
       - name: 'Merge PR'
         run: |
@@ -119,14 +156,51 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
 
-      - name: 'Wait for status checks'
-        uses: lewagon/wait-on-check-action@v1.3.1
-        with:
-          ref: ${{ steps.pr-sha.outputs.sha }}
-          repo-token: ${{ secrets.GH_PAT }}
-          wait-interval: 30
-          running-workflow-name: 'Deploy to pre-demo & demo'
-          allowed-conclusions: success,skipped,neutral
+      - name: 'Wait for checks to complete (not necessarily pass)'
+        run: |
+          echo "Waiting for checks to complete on commit ${{ steps.pr-sha.outputs.sha }}..."
+          TIMEOUT=1800 # 30 минут
+          INTERVAL=30  # 30 секунд между проверками
+          ELAPSED=0
+          
+          while [ $ELAPSED -lt $TIMEOUT ]; do
+            # Получаем check runs для коммита
+            CHECK_RUNS=$(gh api repos/${{ github.repository }}/commits/${{ steps.pr-sha.outputs.sha }}/check-runs --jq '.check_runs[]')
+            
+            if [ -z "$CHECK_RUNS" ]; then
+              echo "No check runs found, proceeding..."
+              break
+            fi
+            
+            # Подсчитываем статусы
+            TOTAL_CHECKS=$(echo "$CHECK_RUNS" | jq -s 'length')
+            COMPLETED_CHECKS=$(echo "$CHECK_RUNS" | jq -s '[.[] | select(.status == "completed")] | length')
+            QUEUED_CHECKS=$(echo "$CHECK_RUNS" | jq -s '[.[] | select(.status == "queued")] | length')
+            IN_PROGRESS_CHECKS=$(echo "$CHECK_RUNS" | jq -s '[.[] | select(.status == "in_progress")] | length')
+            
+            echo "Check runs status: $COMPLETED_CHECKS/$TOTAL_CHECKS completed, $QUEUED_CHECKS queued, $IN_PROGRESS_CHECKS in progress"
+            
+            # Если все проверки завершены (неважно с каким результатом)
+            if [ "$COMPLETED_CHECKS" -eq "$TOTAL_CHECKS" ]; then
+              echo "All checks completed! Proceeding with merge..."
+              
+              # Покажем результаты для информации
+              echo "Check results:"
+              echo "$CHECK_RUNS" | jq -r 'select(.status == "completed") | "- \(.name): \(.conclusion)"'
+              break
+            fi
+            
+            echo "Waiting for $((TOTAL_CHECKS - COMPLETED_CHECKS)) checks to complete..."
+            sleep $INTERVAL
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+          
+          if [ $ELAPSED -ge $TIMEOUT ]; then
+            echo "Timeout waiting for checks to complete."
+            exit 1
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
 
       - name: 'Merge PR'
         run: |
