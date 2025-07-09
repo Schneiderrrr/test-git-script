@@ -61,13 +61,12 @@ jobs:
           INTERVAL=30  # 30 секунд между проверками
           ELAPSED=0
           
-          # Исключаем текущий воркфлоу по имени джобы и ID run
+          # Исключаем текущий воркфлоу по имени джобы
           CURRENT_JOB_NAME="1. Merge dev -> pre-demo"
-          CURRENT_RUN_ID="${{ github.run_id }}"
           
           while [ $ELAPSED -lt $TIMEOUT ]; do
             # Получаем check runs для коммита, исключая текущий воркфлоу
-            CHECK_RUNS=$(gh api repos/${{ github.repository }}/commits/${{ steps.pr-sha.outputs.sha }}/check-runs --jq '.check_runs[] | select(.name != "'"$CURRENT_JOB_NAME"'" and (.external_id // "") != "'"$CURRENT_RUN_ID"'")')
+            CHECK_RUNS=$(gh api repos/${{ github.repository }}/commits/${{ steps.pr-sha.outputs.sha }}/check-runs --jq '.check_runs[] | select(.name != "'"$CURRENT_JOB_NAME"'")
           
             if [ -z "$CHECK_RUNS" ]; then
               echo "No relevant check runs found (excluding current workflow), proceeding..."
@@ -175,11 +174,10 @@ jobs:
           
           # Исключаем текущий воркфлоу по имени джобы и ID run
           CURRENT_JOB_NAME="2. Merge pre-demo -> demo"
-          CURRENT_RUN_ID="${{ github.run_id }}"
           
           while [ $ELAPSED -lt $TIMEOUT ]; do
             # Получаем check runs для коммита, исключая текущий воркфлоу
-            CHECK_RUNS=$(gh api repos/${{ github.repository }}/commits/${{ steps.pr-sha.outputs.sha }}/check-runs --jq '.check_runs[] | select(.name != "'"$CURRENT_JOB_NAME"'" and (.external_id // "") != "'"$CURRENT_RUN_ID"'")')
+            CHECK_RUNS=$(gh api repos/${{ github.repository }}/commits/${{ steps.pr-sha.outputs.sha }}/check-runs --jq '.check_runs[] | select(.name != "'"$CURRENT_JOB_NAME"'")')
           
             if [ -z "$CHECK_RUNS" ]; then
               echo "No relevant check runs found (excluding current workflow), proceeding..."
