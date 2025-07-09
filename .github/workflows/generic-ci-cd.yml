@@ -1,4 +1,4 @@
-name: 🧪 Slow Test Check
+name: 'Continuous Integration and Deployment'
 
 on:
   pull_request:

@@ -48,69 +48,75 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
 
-      - name: 'Get PR HEAD SHA'
-        id: pr-sha
+      - name: 'Wait for CI/CD workflow triggered by this PR'
         run: |
-          PR_SHA=$(gh pr view ${{ steps.pre-demo-pr.outputs.pr_number }} --json headRefOid -q .headRefOid)
-          echo "sha=$PR_SHA" >> $GITHUB_OUTPUT
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
-
-      - name: 'Wait for checks to complete'
-        run: |
-          echo "Waiting for checks to complete on commit ${{ steps.pr-sha.outputs.sha }}..."
+          echo "Waiting for 'Continuous Integration and Deployment' workflow triggered by PR #${{ steps.pre-demo-pr.outputs.pr_number }}..."
           TIMEOUT=1800 # 30 минут
           INTERVAL=30  # 30 секунд между проверками
           ELAPSED=0
           
-          # Получаем время начала нашего воркфлоу
-          WORKFLOW_START_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          echo "Workflow started at: $WORKFLOW_START_TIME"
+          # Получаем время создания PR (если он был создан) или текущее время
+          if [ "${{ steps.pre-demo-pr.outputs.pr_created }}" = "true" ]; then
+            # PR был создан только что, получаем его время создания
+            PR_CREATED_TIME=$(gh pr view ${{ steps.pre-demo-pr.outputs.pr_number }} --json createdAt -q .createdAt)
+            echo "PR was created at: $PR_CREATED_TIME"
+            REFERENCE_TIME="$PR_CREATED_TIME"
+          else
+            # PR уже существовал, используем время начала нашего workflow
+            REFERENCE_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+            echo "Using workflow start time as reference: $REFERENCE_TIME"
+          fi
           
-          # Ждем немного, чтобы PR checks успели запуститься
-          echo "Waiting 10 seconds for PR checks to initialize..."
-          sleep 10
+          # Ждем немного, чтобы workflow успел запуститься
+          echo "Waiting 15 seconds for CI/CD workflow to initialize..."
+          sleep 15
           
           while [ $ELAPSED -lt $TIMEOUT ]; do
-            # Получаем check runs для коммита, созданные после начала нашего воркфлоу
-            CHECK_RUNS=$(gh api repos/${{ github.repository }}/commits/${{ steps.pr-sha.outputs.sha }}/check-runs --jq '.check_runs[] | select(.name != "1. Merge dev -> pre-demo" and .name != "2. Merge pre-demo -> demo" and .started_at >= "'"$WORKFLOW_START_TIME"'")')
-          
-            if [ -z "$CHECK_RUNS" ]; then
-              echo "No relevant check runs found (started after workflow), proceeding..."
+            # Получаем все workflow runs для "Continuous Integration and Deployment"
+            # которые были запущены после нашего референсного времени
+            WORKFLOW_RUNS=$(gh api repos/${{ github.repository }}/actions/workflows/generic-ci-cd.yml/runs \
+              --jq '.workflow_runs[] | select(.created_at >= "'"$REFERENCE_TIME"'")')
+            
+            if [ -z "$WORKFLOW_RUNS" ]; then
+              echo "No CI/CD workflow runs found after reference time, waiting..."
+              sleep $INTERVAL
+              ELAPSED=$((ELAPSED + INTERVAL))
+              continue
+            fi
+            
+            # Ищем workflow run, который был запущен для нашего PR
+            RELEVANT_RUN=$(echo "$WORKFLOW_RUNS" | jq -s '.[] | select(.pull_requests != null and (.pull_requests[] | .number == ${{ steps.pre-demo-pr.outputs.pr_number }}))')
+            
+            if [ -z "$RELEVANT_RUN" ]; then
+              echo "No CI/CD workflow run found for PR #${{ steps.pre-demo-pr.outputs.pr_number }}, waiting..."
+              sleep $INTERVAL
+              ELAPSED=$((ELAPSED + INTERVAL))
+              continue
+            fi
+            
+            # Получаем статус и заключение
+            STATUS=$(echo "$RELEVANT_RUN" | jq -r '.status')
+            CONCLUSION=$(echo "$RELEVANT_RUN" | jq -r '.conclusion // "null"')
+            RUN_ID=$(echo "$RELEVANT_RUN" | jq -r '.id')
+            CREATED_AT=$(echo "$RELEVANT_RUN" | jq -r '.created_at')
+            
+            echo "Found CI/CD workflow run #$RUN_ID for PR #${{ steps.pre-demo-pr.outputs.pr_number }}"
+            echo "Status: $STATUS, Conclusion: $CONCLUSION (created: $CREATED_AT)"
+            
+            # Если workflow завершен
+            if [ "$STATUS" = "completed" ]; then
+              echo "CI/CD workflow completed with conclusion: $CONCLUSION"
+              echo "Proceeding with merge..."
               break
             fi
-          
-            # Подсчитываем статусы
-            TOTAL_CHECKS=$(echo "$CHECK_RUNS" | jq -s 'length')
-            COMPLETED_CHECKS=$(echo "$CHECK_RUNS" | jq -s '[.[] | select(.status == "completed")] | length')
-            QUEUED_CHECKS=$(echo "$CHECK_RUNS" | jq -s '[.[] | select(.status == "queued")] | length')
-            IN_PROGRESS_CHECKS=$(echo "$CHECK_RUNS" | jq -s '[.[] | select(.status == "in_progress")] | length')
-          
-            echo "Check runs status (started after $WORKFLOW_START_TIME): $COMPLETED_CHECKS/$TOTAL_CHECKS completed, $QUEUED_CHECKS queued, $IN_PROGRESS_CHECKS in progress"
-          
-            # Показать какие проверки еще выполняются
-            if [ "$QUEUED_CHECKS" -gt 0 ] || [ "$IN_PROGRESS_CHECKS" -gt 0 ]; then
-              echo "Active checks:"
-              echo "$CHECK_RUNS" | jq -r 'select(.status != "completed") | "- \(.name): \(.status) (started: \(.started_at))"'
-            fi
-          
-            # Если все проверки завершены (неважно с каким результатом)
-            if [ "$COMPLETED_CHECKS" -eq "$TOTAL_CHECKS" ]; then
-              echo "All relevant checks completed! Proceeding with merge..."
-          
-              # Покажем результаты для информации
-              echo "Check results:"
-              echo "$CHECK_RUNS" | jq -r 'select(.status == "completed") | "- \(.name): \(.conclusion)"'
-              break
-            fi
-          
-            echo "Waiting for $((TOTAL_CHECKS - COMPLETED_CHECKS)) checks to complete..."
+            
+            echo "Waiting for CI/CD workflow to complete..."
             sleep $INTERVAL
             ELAPSED=$((ELAPSED + INTERVAL))
           done
           
           if [ $ELAPSED -ge $TIMEOUT ]; then
-            echo "Timeout waiting for checks to complete."
+            echo "Timeout waiting for CI/CD workflow to complete."
             exit 1
           fi
         env:
@@ -156,80 +162,10 @@ jobs:
           if [ -n "$EXISTING_PR" ]; then
             echo "PR already exists: $EXISTING_PR"
             echo "pr_number=$EXISTING_PR" >> $GITHUB_OUTPUT
-            echo "pr_created=false" >> $GITHUB_OUTPUT
           else
             gh pr create --base demo --head pre-demo --title "Opening PR pre-demo to demo" --body "PR pre-demo to demo"
             PR_NUMBER=$(gh pr list --base demo --head pre-demo --state open --json number --jq '.[0].number')
             echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
-            echo "pr_created=true" >> $GITHUB_OUTPUT
-          fi
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
-
-      - name: 'Get PR HEAD SHA'
-        id: pr-sha
-        run: |
-          PR_SHA=$(gh pr view ${{ steps.demo-pr.outputs.pr_number }} --json headRefOid -q .headRefOid)
-          echo "sha=$PR_SHA" >> $GITHUB_OUTPUT
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
-
-      - name: 'Wait for checks to complete'
-        run: |
-          echo "Waiting for checks to complete on commit ${{ steps.pr-sha.outputs.sha }}..."
-          TIMEOUT=1800 # 30 минут
-          INTERVAL=30  # 30 секунд между проверками
-          ELAPSED=0
-          
-          # Получаем время начала нашего воркфлоу
-          WORKFLOW_START_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          echo "Workflow started at: $WORKFLOW_START_TIME"
-          
-          # Ждем немного, чтобы PR checks успели запуститься
-          echo "Waiting 10 seconds for PR checks to initialize..."
-          sleep 10
-          
-          while [ $ELAPSED -lt $TIMEOUT ]; do
-            # Получаем check runs для коммита, созданные после начала нашего воркфлоу
-            CHECK_RUNS=$(gh api repos/${{ github.repository }}/commits/${{ steps.pr-sha.outputs.sha }}/check-runs --jq '.check_runs[] | select(.name != "1. Merge dev -> pre-demo" and .name != "2. Merge pre-demo -> demo" and .started_at >= "'"$WORKFLOW_START_TIME"'")')
-          
-            if [ -z "$CHECK_RUNS" ]; then
-              echo "No relevant check runs found (started after workflow), proceeding..."
-              break
-            fi
-          
-            # Подсчитываем статусы
-            TOTAL_CHECKS=$(echo "$CHECK_RUNS" | jq -s 'length')
-            COMPLETED_CHECKS=$(echo "$CHECK_RUNS" | jq -s '[.[] | select(.status == "completed")] | length')
-            QUEUED_CHECKS=$(echo "$CHECK_RUNS" | jq -s '[.[] | select(.status == "queued")] | length')
-            IN_PROGRESS_CHECKS=$(echo "$CHECK_RUNS" | jq -s '[.[] | select(.status == "in_progress")] | length')
-          
-            echo "Check runs status (started after $WORKFLOW_START_TIME): $COMPLETED_CHECKS/$TOTAL_CHECKS completed, $QUEUED_CHECKS queued, $IN_PROGRESS_CHECKS in progress"
-          
-            # Показать какие проверки еще выполняются
-            if [ "$QUEUED_CHECKS" -gt 0 ] || [ "$IN_PROGRESS_CHECKS" -gt 0 ]; then
-              echo "Active checks:"
-              echo "$CHECK_RUNS" | jq -r 'select(.status != "completed") | "- \(.name): \(.status) (started: \(.started_at))"'
-            fi
-          
-            # Если все проверки завершены (неважно с каким результатом)
-            if [ "$COMPLETED_CHECKS" -eq "$TOTAL_CHECKS" ]; then
-              echo "All relevant checks completed! Proceeding with merge..."
-          
-              # Покажем результаты для информации
-              echo "Check results:"
-              echo "$CHECK_RUNS" | jq -r 'select(.status == "completed") | "- \(.name): \(.conclusion)"'
-              break
-            fi
-          
-            echo "Waiting for $((TOTAL_CHECKS - COMPLETED_CHECKS)) checks to complete..."
-            sleep $INTERVAL
-            ELAPSED=$((ELAPSED + INTERVAL))
-          done
-          
-          if [ $ELAPSED -ge $TIMEOUT ]; then
-            echo "Timeout waiting for checks to complete."
-            exit 1
           fi
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
