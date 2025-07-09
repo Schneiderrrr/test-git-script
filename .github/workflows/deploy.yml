@@ -35,6 +35,8 @@ jobs:
           gh pr create --base pre-demo --head dev --title "Opening PR dev to pre-demo"
           PR_NUMBER=$(gh pr list --base pre-demo --head dev --state open --json number --jq '.[0].number')
           echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ github.token }}
 
       - name: 'Get PR SHA'
         id: pr-sha
@@ -83,6 +85,8 @@ jobs:
           gh pr create --base demo --head pre-demo --title "Opening PR pre-demo to demo"
           PR_NUMBER=$(gh pr list --base demo --head pre-demo --state open --json number --jq '.[0].number')
           echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ github.token }}
 
       - name: 'Merge PR'
         run: |
