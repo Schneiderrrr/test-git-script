@@ -51,6 +51,8 @@ jobs:
         with:
           checkInterval: '30'
           ignoreActions: ''
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
 
       - name: 'Merge PR'
         run: |
