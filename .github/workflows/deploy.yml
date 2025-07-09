@@ -43,6 +43,8 @@ jobs:
         run: |
           PR_SHA=$(gh pr view ${{ steps.pre-demo-pr.outputs.pr_number }} --json headRefOid -q .headRefOid)
           echo "sha=$PR_SHA" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
 
       - name: 'Wait for checks to complete'
         uses: WyriHaximus/github-action-wait-for-status@v1
