@@ -8,8 +8,6 @@ jobs:
   check-previous-workflow:
     name: 'Ensure generic-ci-cd.yml on dev was successful'
     runs-on: ubuntu-latest
-    outputs:
-      continue: ${{ steps.check-status.outputs.continue }}
 
     steps:
       - name: Check latest run of generic-ci-cd.yml on dev
@@ -17,7 +15,7 @@ jobs:
         run: |
           echo "🔍 Fetching latest 'generic-ci-cd.yml' run on branch 'dev'..."
 
-          RUN_ID=$(gh run list --workflow generic-ci-cd.yml --branch dev --limit 1 --json databaseId -q '.[0].databaseId')
+          RUN_ID=$(gh run list --repo "${{ github.repository }}" --workflow generic-ci-cd.yml --branch dev --limit 1  --json databaseId -q '.[0].databaseId')
 
           if [ -z "$RUN_ID" ]; then
             echo "❌ No previous workflow run found."
