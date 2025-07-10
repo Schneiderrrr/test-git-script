@@ -13,7 +13,6 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-      actions: write
 
     steps:
       # Step 1: Check out the repository
@@ -22,7 +21,7 @@ jobs:
         with:
           # We are going to push, so we need to create a full clone
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GH_PAT }}
 
       - name: 'Git adjustments'
         run: |
@@ -43,7 +42,7 @@ jobs:
             echo "No existing PR found, proceeding with creation"
           fi
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
 
       - name: 'Create PR from dev to pre-demo'
         id: pre-demo-pr
@@ -54,7 +53,7 @@ jobs:
           echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
           echo "Created PR number: $PR_NUMBER"
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
 
       - name: 'Wait for CI/CD workflow triggered by this PR'
         run: |
@@ -67,7 +66,7 @@ jobs:
           fi
           
           TIMEOUT=1800 # 30 minutes
-          INTERVAL=10  # 10 seconds between checks
+          INTERVAL=30  # 30 seconds between checks
           ELAPSED=0
           
           # Get PR creation time as reference
@@ -76,7 +75,7 @@ jobs:
           
           # Find the workflow ID by filename (looking for ci-cd.yml or similar)
           echo "Finding CI/CD workflow by filename..."
-          WORKFLOW_ID=$(gh api repos/${{ github.repository }}/actions/workflows --jq '.workflows[] | select(.path | endswith("generic-ci-cd.yml")) | .id' | head -1)
+          WORKFLOW_ID=$(gh api repos/${{ github.repository }}/actions/workflows --jq '.workflows[] | select(.path | test("ci-cd\\.yml$|ci\\.yml$|cicd\\.yml$|build\\.yml$")) | .id' | head -1)
           
           if [ -z "$WORKFLOW_ID" ]; then
             echo "Could not find CI/CD workflow by common filenames"
@@ -142,13 +141,13 @@ jobs:
             exit 1
           fi
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
 
       - name: 'Merge PR'
         run: |
           gh pr merge ${{ steps.pre-demo-pr.outputs.pr_number }} --merge --admin
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
 
   # --- Task 2: Merge pre-demo to demo ---
   merge-pre-demo-to-demo:
@@ -167,7 +166,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GH_PAT }}
 
       - name: 'Git adjustments'
         run: |
@@ -192,7 +191,7 @@ jobs:
             echo "No existing PR found, proceeding with creation"
           fi
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
 
       - name: 'Create PR from pre-demo to demo'
         id: demo-pr
@@ -202,10 +201,10 @@ jobs:
           PR_NUMBER=$(gh pr list --base demo --head pre-demo --state open --json number --jq '.[0].number')
           echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
 
       - name: 'Merge PR'
         run: |
           gh pr merge ${{ steps.demo-pr.outputs.pr_number }} --merge --admin
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
