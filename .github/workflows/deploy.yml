@@ -51,28 +51,49 @@ jobs:
           gh pr create --base pre-demo --head dev --title "Deploy dev to pre-demo" --body "PR from dev to pre-demo"
           PR_NUMBER=$(gh pr list --base pre-demo --head dev --state open --json number --jq '.[0].number')
           echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+          echo "Created PR number: $PR_NUMBER"
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
 
       - name: 'Wait for CI/CD workflow triggered by this PR'
         run: |
-          echo "Waiting for 'Continuous Integration and Deployment' workflow triggered by PR #${{ steps.pre-demo-pr.outputs.pr_number }}..."
-          TIMEOUT=1000 # 5 min -- max wainting time
-          INTERVAL=30  # 30 sec between checks
+          PR_NUMBER="${{ steps.pre-demo-pr.outputs.pr_number }}"
+          echo "Waiting for 'Continuous Integration and Deployment' workflow triggered by PR #$PR_NUMBER..."
+          
+          if [ -z "$PR_NUMBER" ]; then
+            echo "Error: PR number is empty"
+            exit 1
+          fi
+          
+          TIMEOUT=1800 # 30 minutes
+          INTERVAL=30  # 30 seconds between checks
           ELAPSED=0
           
           # Get PR creation time as reference
-          PR_CREATED_TIME=$(gh pr view ${{ steps.pre-demo-pr.outputs.pr_number }} --json createdAt -q .createdAt)
+          PR_CREATED_TIME=$(gh pr view $PR_NUMBER --json createdAt -q .createdAt)
           echo "PR was created at: $PR_CREATED_TIME"
+          
+          # Find the workflow ID for "Continuous Integration and Deployment"
+          echo "Finding workflow ID for 'Continuous Integration and Deployment'..."
+          WORKFLOW_ID=$(gh api repos/${{ github.repository }}/actions/workflows --jq '.workflows[] | select(.name == "Continuous Integration and Deployment") | .id')
+          
+          if [ -z "$WORKFLOW_ID" ]; then
+            echo "Could not find workflow 'Continuous Integration and Deployment'"
+            echo "Available workflows:"
+            gh api repos/${{ github.repository }}/actions/workflows --jq '.workflows[] | "\(.name) (ID: \(.id))"'
+            exit 1
+          fi
+          
+          echo "Found workflow ID: $WORKFLOW_ID"
           
           # Wait for workflow to initialize
           echo "Waiting 15 seconds for CI/CD workflow to initialize..."
           sleep 15
           
           while [ $ELAPSED -lt $TIMEOUT ]; do
-            # Get all workflow runs for "Continuous Integration and Deployment"
+            # Get all workflow runs for our specific workflow
             # that were started after PR creation
-            WORKFLOW_RUNS=$(gh api repos/${{ github.repository }}/actions/workflows/generic-ci-cd.yml/runs \
+            WORKFLOW_RUNS=$(gh api repos/${{ github.repository }}/actions/workflows/$WORKFLOW_ID/runs \
               --jq '.workflow_runs[] | select(.created_at >= "'"$PR_CREATED_TIME"'")')
             
             if [ -z "$WORKFLOW_RUNS" ]; then
@@ -83,10 +104,11 @@ jobs:
             fi
             
             # Find workflow run that was triggered for our PR
-            RELEVANT_RUN=$(echo "$WORKFLOW_RUNS" | jq -s '.[] | select(.pull_requests != null and (.pull_requests[] | .number == ${{ steps.pre-demo-pr.outputs.pr_number }}))')
+            # Use --argjson to properly pass the PR number
+            RELEVANT_RUN=$(echo "$WORKFLOW_RUNS" | jq --argjson pr_num "$PR_NUMBER" -s '.[] | select(.pull_requests != null and (.pull_requests[] | .number == $pr_num))')
             
             if [ -z "$RELEVANT_RUN" ]; then
-              echo "No CI/CD workflow run found for PR #${{ steps.pre-demo-pr.outputs.pr_number }}, waiting..."
+              echo "No CI/CD workflow run found for PR #$PR_NUMBER, waiting..."
               sleep $INTERVAL
               ELAPSED=$((ELAPSED + INTERVAL))
               continue
@@ -98,7 +120,7 @@ jobs:
             RUN_ID=$(echo "$RELEVANT_RUN" | jq -r '.id')
             CREATED_AT=$(echo "$RELEVANT_RUN" | jq -r '.created_at')
             
-            echo "Found CI/CD workflow run #$RUN_ID for PR #${{ steps.pre-demo-pr.outputs.pr_number }}"
+            echo "Found CI/CD workflow run #$RUN_ID for PR #$PR_NUMBER"
             echo "Status: $STATUS, Conclusion: $CONCLUSION (created: $CREATED_AT)"
             
             # If workflow is completed
