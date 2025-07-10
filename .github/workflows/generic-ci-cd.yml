@@ -9,6 +9,10 @@ on:
   pull_request:
     types: [opened, synchronize]
   workflow_call:
+    inputs:
+      branch:
+        required: true
+        type: string
 
 jobs:
   slow-test:
@@ -20,6 +24,13 @@ jobs:
 
       - name: Simulate long-running tests
         run: |
+          if [[ "${{ github.event_name }}" == "workflow_call" ]]; then
+            echo "🧬 Workflow was triggered via workflow_call"
+            echo "inputs.branch = ${{ inputs.branch }}"
+          elif [[ "${{ github.event_name }}" == "push" ]]; then
+            echo "🚀 Workflow was triggered by push"
+          fi
+  
           echo "🕒 Starting fake tests..."
           sleep 10
           echo "✅ Fake tests completed after 30 seconds!"
