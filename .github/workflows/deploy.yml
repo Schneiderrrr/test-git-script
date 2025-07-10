@@ -28,82 +28,102 @@ jobs:
           git config --global user.name 'GitHub Actions Bot'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
 
+      - name: 'Check if PR already exists'
+        run: |
+          set -e
+          # Check if PR already exists
+          EXISTING_PR=$(gh pr list --base pre-demo --head dev --state open --json number --jq '.[0].number // empty')
+          
+          if [ -n "$EXISTING_PR" ]; then
+            echo "PR already exists: #$EXISTING_PR"
+            echo "Stopping workflow execution as PR dev -> pre-demo already exists"
+            exit 1
+          else
+            echo "No existing PR found, proceeding with creation"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+
       - name: 'Create PR from dev to pre-demo'
         id: pre-demo-pr
         run: |
           set -e
-          # Проверяем, существует ли уже PR
-          EXISTING_PR=$(gh pr list --base pre-demo --head dev --state open --json number --jq '.[0].number // empty')
-          
-          if [ -n "$EXISTING_PR" ]; then
-            echo "PR already exists: $EXISTING_PR"
-            echo "pr_number=$EXISTING_PR" >> $GITHUB_OUTPUT
-            echo "pr_created=false" >> $GITHUB_OUTPUT
-          else
-            gh pr create --base pre-demo --head dev --title "Opening PR dev to pre-demo" --body "PR dev to pre-demo"
-            PR_NUMBER=$(gh pr list --base pre-demo --head dev --state open --json number --jq '.[0].number')
-            echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
-            echo "pr_created=true" >> $GITHUB_OUTPUT
-          fi
+          gh pr create --base pre-demo --head dev --title "Deploy dev to pre-demo" --body "PR from dev to pre-demo"
+          PR_NUMBER=$(gh pr list --base pre-demo --head dev --state open --json number --jq '.[0].number')
+          echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+          echo "Created PR number: $PR_NUMBER"
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
 
       - name: 'Wait for CI/CD workflow triggered by this PR'
         run: |
-          echo "Waiting for 'Continuous Integration and Deployment' workflow triggered by PR #${{ steps.pre-demo-pr.outputs.pr_number }}..."
-          TIMEOUT=1800 # 30 минут
-          INTERVAL=30  # 30 секунд между проверками
-          ELAPSED=0
+          PR_NUMBER="${{ steps.pre-demo-pr.outputs.pr_number }}"
+          echo "Waiting for 'Continuous Integration and Deployment' workflow triggered by PR #$PR_NUMBER..."
           
-          # Получаем время создания PR (если он был создан) или текущее время
-          if [ "${{ steps.pre-demo-pr.outputs.pr_created }}" = "true" ]; then
-            # PR был создан только что, получаем его время создания
-            PR_CREATED_TIME=$(gh pr view ${{ steps.pre-demo-pr.outputs.pr_number }} --json createdAt -q .createdAt)
-            echo "PR was created at: $PR_CREATED_TIME"
-            REFERENCE_TIME="$PR_CREATED_TIME"
-          else
-            # PR уже существовал, используем время начала нашего workflow
-            REFERENCE_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-            echo "Using workflow start time as reference: $REFERENCE_TIME"
+          if [ -z "$PR_NUMBER" ]; then
+            echo "Error: PR number is empty"
+            exit 1
           fi
           
-          # Ждем немного, чтобы workflow успел запуститься
+          TIMEOUT=1800 # 30 minutes
+          INTERVAL=30  # 30 seconds between checks
+          ELAPSED=0
+          
+          # Get PR creation time as reference
+          PR_CREATED_TIME=$(gh pr view $PR_NUMBER --json createdAt -q .createdAt)
+          echo "PR was created at: $PR_CREATED_TIME"
+          
+          # Find the workflow ID for "Continuous Integration and Deployment"
+          echo "Finding workflow ID for 'Continuous Integration and Deployment'..."
+          WORKFLOW_ID=$(gh api repos/${{ github.repository }}/actions/workflows --jq '.workflows[] | select(.name == "Continuous Integration and Deployment") | .id')
+          
+          if [ -z "$WORKFLOW_ID" ]; then
+            echo "Could not find workflow 'Continuous Integration and Deployment'"
+            echo "Available workflows:"
+            gh api repos/${{ github.repository }}/actions/workflows --jq '.workflows[] | "\(.name) (ID: \(.id))"'
+            exit 1
+          fi
+          
+          echo "Found workflow ID: $WORKFLOW_ID"
+          
+          # Wait for workflow to initialize
           echo "Waiting 15 seconds for CI/CD workflow to initialize..."
           sleep 15
           
           while [ $ELAPSED -lt $TIMEOUT ]; do
-            # Получаем все workflow runs для "Continuous Integration and Deployment"
-            # которые были запущены после нашего референсного времени
-            WORKFLOW_RUNS=$(gh api repos/${{ github.repository }}/actions/workflows/generic-ci-cd.yml/runs \
-              --jq '.workflow_runs[] | select(.created_at >= "'"$REFERENCE_TIME"'")')
+            # Get all workflow runs for our specific workflow
+            # that were started after PR creation
+            WORKFLOW_RUNS=$(gh api repos/${{ github.repository }}/actions/workflows/$WORKFLOW_ID/runs \
+              --jq '.workflow_runs[] | select(.created_at >= "'"$PR_CREATED_TIME"'")')
             
             if [ -z "$WORKFLOW_RUNS" ]; then
-              echo "No CI/CD workflow runs found after reference time, waiting..."
+              echo "No CI/CD workflow runs found after PR creation, waiting..."
               sleep $INTERVAL
               ELAPSED=$((ELAPSED + INTERVAL))
               continue
             fi
             
-            # Ищем workflow run, который был запущен для нашего PR
-            RELEVANT_RUN=$(echo "$WORKFLOW_RUNS" | jq -s '.[] | select(.pull_requests != null and (.pull_requests[] | .number == ${{ steps.pre-demo-pr.outputs.pr_number }}))')
+            # Find workflow run that was triggered for our PR
+            # Use --argjson to properly pass the PR number
+            RELEVANT_RUN=$(echo "$WORKFLOW_RUNS" | jq --argjson pr_num "$PR_NUMBER" -s '.[] | select(.pull_requests != null and (.pull_requests[] | .number == $pr_num))')
             
             if [ -z "$RELEVANT_RUN" ]; then
-              echo "No CI/CD workflow run found for PR #${{ steps.pre-demo-pr.outputs.pr_number }}, waiting..."
+              echo "No CI/CD workflow run found for PR #$PR_NUMBER, waiting..."
               sleep $INTERVAL
               ELAPSED=$((ELAPSED + INTERVAL))
               continue
             fi
             
-            # Получаем статус и заключение
+            # Get status and conclusion
             STATUS=$(echo "$RELEVANT_RUN" | jq -r '.status')
             CONCLUSION=$(echo "$RELEVANT_RUN" | jq -r '.conclusion // "null"')
             RUN_ID=$(echo "$RELEVANT_RUN" | jq -r '.id')
             CREATED_AT=$(echo "$RELEVANT_RUN" | jq -r '.created_at')
             
-            echo "Found CI/CD workflow run #$RUN_ID for PR #${{ steps.pre-demo-pr.outputs.pr_number }}"
+            echo "Found CI/CD workflow run #$RUN_ID for PR #$PR_NUMBER"
             echo "Status: $STATUS, Conclusion: $CONCLUSION (created: $CREATED_AT)"
             
-            # Если workflow завершен
+            # If workflow is completed
             if [ "$STATUS" = "completed" ]; then
               echo "CI/CD workflow completed with conclusion: $CONCLUSION"
               echo "Proceeding with merge..."
@@ -152,21 +172,29 @@ jobs:
           git config --global user.name 'GitHub Actions Bot'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
 
+      - name: 'Check if PR already exists'
+        run: |
+          set -e
+          # Check if PR already exists
+          EXISTING_PR=$(gh pr list --base demo --head pre-demo --state open --json number --jq '.[0].number // empty')
+          
+          if [ -n "$EXISTING_PR" ]; then
+            echo "PR already exists: #$EXISTING_PR"
+            echo "Stopping workflow execution as PR pre-demo -> demo already exists"
+            exit 1
+          else
+            echo "No existing PR found, proceeding with creation"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+
       - name: 'Create PR from pre-demo to demo'
         id: demo-pr
         run: |
           set -e
-          # Проверяем, существует ли уже PR
-          EXISTING_PR=$(gh pr list --base demo --head pre-demo --state open --json number --jq '.[0].number // empty')
-          
-          if [ -n "$EXISTING_PR" ]; then
-            echo "PR already exists: $EXISTING_PR"
-            echo "pr_number=$EXISTING_PR" >> $GITHUB_OUTPUT
-          else
-            gh pr create --base demo --head pre-demo --title "Opening PR pre-demo to demo" --body "PR pre-demo to demo"
-            PR_NUMBER=$(gh pr list --base demo --head pre-demo --state open --json number --jq '.[0].number')
-            echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
-          fi
+          gh pr create --base demo --head pre-demo --title "Deploy pre-demo to demo" --body "PR from pre-demo to demo"
+          PR_NUMBER=$(gh pr list --base demo --head pre-demo --state open --json number --jq '.[0].number')
+          echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
 
