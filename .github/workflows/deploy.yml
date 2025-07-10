@@ -4,15 +4,59 @@ on:
   workflow_dispatch:
 
 jobs:
+  # --- Task 0: Search the last CI/CD successful workflow---
+  check-previous-workflow:
+    name: 'Ensure generic-ci-cd.yml on dev was successful'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 'Checkout repository'
+        uses: actions/checkout@v4
+        with:
+          # We are going to push, so we need to create a full clone
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 'Check latest run of generic-ci-cd.yml on dev'
+        id: check-status
+        run: |
+          echo "🔍 Fetching latest 'generic-ci-cd.yml' run on branch 'dev'..."
+
+          RUN_ID=$(gh run list --repo "${{ github.repository }}" --workflow generic-ci-cd.yml --branch dev --limit 1  --json databaseId -q '.[0].databaseId')
+
+          if [ -z "$RUN_ID" ]; then
+            echo "❌ No previous workflow run found."
+            echo "continue=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+          STATUS=$(gh run view "$RUN_ID" --json conclusion -q .conclusion)
+
+          echo "➡️ Last run conclusion: $STATUS"
+
+          if [ "$STATUS" == "success" ]; then
+            echo "✅ Last run succeeded."
+            echo "continue=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Last run did not succeed. Interrupting..."
+            echo "continue=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+
   # --- Task 1: Merge from dev to pre-demo ---
   merge-dev-to-pre-demo:
     name: '1. Merge dev -> pre-demo'
+    needs: check-previous-workflow
     runs-on: ubuntu-latest
 
     # Allow pushing
     permissions:
       contents: write
       pull-requests: write
+      actions: write
 
     steps:
       # Step 1: Check out the repository
@@ -21,7 +65,7 @@ jobs:
         with:
           # We are going to push, so we need to create a full clone
           fetch-depth: 0
-          token: ${{ secrets.GH_PAT }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 'Git adjustments'
         run: |
@@ -42,7 +86,7 @@ jobs:
             echo "No existing PR found, proceeding with creation"
           fi
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 'Create PR from dev to pre-demo'
         id: pre-demo-pr
@@ -53,101 +97,13 @@ jobs:
           echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
           echo "Created PR number: $PR_NUMBER"
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
-
-      - name: 'Wait for CI/CD workflow triggered by this PR'
-        run: |
-          PR_NUMBER="${{ steps.pre-demo-pr.outputs.pr_number }}"
-          echo "Waiting for 'Continuous Integration and Deployment' workflow triggered by PR #$PR_NUMBER..."
-          
-          if [ -z "$PR_NUMBER" ]; then
-            echo "Error: PR number is empty"
-            exit 1
-          fi
-          
-          TIMEOUT=1800 # 30 minutes
-          INTERVAL=30  # 30 seconds between checks
-          ELAPSED=0
-          
-          # Get PR creation time as reference
-          PR_CREATED_TIME=$(gh pr view $PR_NUMBER --json createdAt -q .createdAt)
-          echo "PR was created at: $PR_CREATED_TIME"
-          
-          # Find the workflow ID by filename (looking for ci-cd.yml or similar)
-          echo "Finding CI/CD workflow by filename..."
-          WORKFLOW_ID=$(gh api repos/${{ github.repository }}/actions/workflows --jq '.workflows[] | select(.path | test("ci-cd\\.yml$|ci\\.yml$|cicd\\.yml$|build\\.yml$")) | .id' | head -1)
-          
-          if [ -z "$WORKFLOW_ID" ]; then
-            echo "Could not find CI/CD workflow by common filenames"
-            echo "Available workflows:"
-            gh api repos/${{ github.repository }}/actions/workflows --jq '.workflows[] | "Name: \(.name), File: \(.path), ID: \(.id)"'
-            echo "Please specify the exact filename in the script"
-            exit 1
-          fi
-          
-          echo "Found workflow ID: $WORKFLOW_ID"
-          
-          # Wait for workflow to initialize
-          echo "Waiting 15 seconds for CI/CD workflow to initialize..."
-          sleep 15
-          
-          while [ $ELAPSED -lt $TIMEOUT ]; do
-            # Get all workflow runs for our specific workflow
-            # that were started after PR creation
-            WORKFLOW_RUNS=$(gh api repos/${{ github.repository }}/actions/workflows/$WORKFLOW_ID/runs \
-              --jq '.workflow_runs[] | select(.created_at >= "'"$PR_CREATED_TIME"'")')
-            
-            if [ -z "$WORKFLOW_RUNS" ]; then
-              echo "No CI/CD workflow runs found after PR creation, waiting..."
-              sleep $INTERVAL
-              ELAPSED=$((ELAPSED + INTERVAL))
-              continue
-            fi
-            
-            # Find workflow run that was triggered for our PR
-            # Use --argjson to properly pass the PR number
-            RELEVANT_RUN=$(echo "$WORKFLOW_RUNS" | jq --argjson pr_num "$PR_NUMBER" -s '.[] | select(.pull_requests != null and (.pull_requests[] | .number == $pr_num))')
-            
-            if [ -z "$RELEVANT_RUN" ]; then
-              echo "No CI/CD workflow run found for PR #$PR_NUMBER, waiting..."
-              sleep $INTERVAL
-              ELAPSED=$((ELAPSED + INTERVAL))
-              continue
-            fi
-            
-            # Get status and conclusion
-            STATUS=$(echo "$RELEVANT_RUN" | jq -r '.status')
-            CONCLUSION=$(echo "$RELEVANT_RUN" | jq -r '.conclusion // "null"')
-            RUN_ID=$(echo "$RELEVANT_RUN" | jq -r '.id')
-            CREATED_AT=$(echo "$RELEVANT_RUN" | jq -r '.created_at')
-            
-            echo "Found CI/CD workflow run #$RUN_ID for PR #$PR_NUMBER"
-            echo "Status: $STATUS, Conclusion: $CONCLUSION (created: $CREATED_AT)"
-            
-            # If workflow is completed
-            if [ "$STATUS" = "completed" ]; then
-              echo "CI/CD workflow completed with conclusion: $CONCLUSION"
-              echo "Proceeding with merge..."
-              break
-            fi
-            
-            echo "Waiting for CI/CD workflow to complete..."
-            sleep $INTERVAL
-            ELAPSED=$((ELAPSED + INTERVAL))
-          done
-          
-          if [ $ELAPSED -ge $TIMEOUT ]; then
-            echo "Timeout waiting for CI/CD workflow to complete."
-            exit 1
-          fi
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 'Merge PR'
         run: |
           gh pr merge ${{ steps.pre-demo-pr.outputs.pr_number }} --merge --admin
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # --- Task 2: Merge pre-demo to demo ---
   merge-pre-demo-to-demo:
@@ -166,7 +122,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GH_PAT }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 'Git adjustments'
         run: |
@@ -191,7 +147,7 @@ jobs:
             echo "No existing PR found, proceeding with creation"
           fi
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 'Create PR from pre-demo to demo'
         id: demo-pr
@@ -201,10 +157,10 @@ jobs:
           PR_NUMBER=$(gh pr list --base demo --head pre-demo --state open --json number --jq '.[0].number')
           echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 'Merge PR'
         run: |
           gh pr merge ${{ steps.demo-pr.outputs.pr_number }} --merge --admin
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
