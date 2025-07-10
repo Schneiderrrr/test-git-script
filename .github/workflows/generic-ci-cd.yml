@@ -1,6 +1,9 @@
 name: 'Continuous Integration and Deployment'
 
 on:
+  push:
+    branches:
+      - dev
   pull_request:
     types: [opened, synchronize]
   workflow_run:
