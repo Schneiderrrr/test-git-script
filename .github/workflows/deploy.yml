@@ -21,7 +21,7 @@ jobs:
         with:
           # We are going to push, so we need to create a full clone
           fetch-depth: 0
-          token: ${{ secrets.GH_PAT }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 'Git adjustments'
         run: |
@@ -46,7 +46,7 @@ jobs:
             echo "pr_created=true" >> $GITHUB_OUTPUT
           fi
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 'Wait for CI/CD workflow triggered by this PR'
         run: |
@@ -120,13 +120,13 @@ jobs:
             exit 1
           fi
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 'Merge PR'
         run: |
           gh pr merge ${{ steps.pre-demo-pr.outputs.pr_number }} --merge --admin
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # --- Task 2: Merge pre-demo to demo ---
   merge-pre-demo-to-demo:
@@ -145,7 +145,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GH_PAT }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 'Git adjustments'
         run: |
@@ -168,10 +168,10 @@ jobs:
             echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
           fi
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 'Merge PR'
         run: |
           gh pr merge ${{ steps.demo-pr.outputs.pr_number }} --merge --admin
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
