@@ -109,7 +109,8 @@ jobs:
   call-pre-demo-ci-cd:
     needs: merge-dev-to-pre-demo
     uses: ./.github/workflows/generic-ci-cd.yml
-
+    with:
+      branch: pre-demo
 
   # --- Task 2: Merge pre-demo to demo ---
   merge-pre-demo-to-demo:
@@ -175,3 +176,5 @@ jobs:
   call-demo-ci-cd:
     needs: merge-pre-demo-to-demo
     uses: ./.github/workflows/generic-ci-cd.yml
+    with:
+      branch: demo
