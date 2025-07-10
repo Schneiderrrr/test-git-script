@@ -10,7 +10,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Check latest run of generic-ci-cd.yml on dev
+      - name: 'Checkout repository'
+        uses: actions/checkout@v4
+        with:
+          # We are going to push, so we need to create a full clone
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 'Check latest run of generic-ci-cd.yml on dev'
         id: check-status
         run: |
           echo "🔍 Fetching latest 'generic-ci-cd.yml' run on branch 'dev'..."
