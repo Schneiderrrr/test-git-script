@@ -48,7 +48,7 @@ jobs:
         id: pre-demo-pr
         run: |
           set -e
-          gh pr create --base pre-demo --head dev --title "Opening PR dev to pre-demo" --body "PR dev to pre-demo"
+          gh pr create --base pre-demo --head dev --title "Deploy dev to pre-demo" --body "PR from dev to pre-demo"
           PR_NUMBER=$(gh pr list --base pre-demo --head dev --state open --json number --jq '.[0].number')
           echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
         env:
@@ -57,7 +57,7 @@ jobs:
       - name: 'Wait for CI/CD workflow triggered by this PR'
         run: |
           echo "Waiting for 'Continuous Integration and Deployment' workflow triggered by PR #${{ steps.pre-demo-pr.outputs.pr_number }}..."
-          TIMEOUT=300 # 5 min -- max wainting time
+          TIMEOUT=1000 # 5 min -- max wainting time
           INTERVAL=30  # 30 sec between checks
           ELAPSED=0
           
@@ -170,7 +170,7 @@ jobs:
         id: demo-pr
         run: |
           set -e
-          gh pr create --base demo --head pre-demo --title "Opening PR pre-demo to demo" --body "PR pre-demo to demo"
+          gh pr create --base demo --head pre-demo --title "Deploy pre-demo to demo" --body "PR from pre-demo to demo"
           PR_NUMBER=$(gh pr list --base demo --head pre-demo --state open --json number --jq '.[0].number')
           echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
         env:
