@@ -105,6 +105,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  # --- Task 1.1: Call CI/CD for pre-demo ---
+  call-pre-demo-ci-cd:
+    needs: merge-dev-to-pre-demo
+    uses: ./.github/workflows/generic-ci-cd.yml
+
+
   # --- Task 2: Merge pre-demo to demo ---
   merge-pre-demo-to-demo:
     name: '2. Merge pre-demo -> demo'
@@ -164,3 +170,8 @@ jobs:
           gh pr merge ${{ steps.demo-pr.outputs.pr_number }} --merge --admin
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # --- Task 2.1: Call CI/CD for demo ---
+  call-demo-ci-cd:
+    needs: merge-pre-demo-to-demo
+    uses: ./.github/workflows/generic-ci-cd.yml
