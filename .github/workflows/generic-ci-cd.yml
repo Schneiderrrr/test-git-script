@@ -24,8 +24,8 @@ jobs:
 
       - name: Simulate long-running tests
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_call" ]]; then
-            echo "🧬 Workflow was triggered via workflow_call"
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "🧬 Workflow was triggered via workflow_dispatch"
             echo "inputs.branch = ${{ inputs.branch }}"
           elif [[ "${{ github.event_name }}" == "push" ]]; then
             echo "🚀 Workflow was triggered by push"
