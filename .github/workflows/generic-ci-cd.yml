@@ -5,6 +5,8 @@ on:
     types: [opened, synchronize]
   workflow_run:
     workflows: [ "Deploy to pre-demo & demo" ]
+    types: [completed]
+  workflow_dispatch:
 
 jobs:
   slow-test:
