@@ -48,7 +48,7 @@ jobs:
         id: pre-demo-pr
         run: |
           set -e
-          gh pr create --base pre-demo --head dev --title "Deploy dev to pre-demo" --body "PR from dev to pre-demo"
+          gh pr create --base pre-demo --head dev --title "Opening PR dev to pre-demo" --body "PR dev to pre-demo"
           PR_NUMBER=$(gh pr list --base pre-demo --head dev --state open --json number --jq '.[0].number')
           echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
           echo "Created PR number: $PR_NUMBER"
@@ -73,14 +73,15 @@ jobs:
           PR_CREATED_TIME=$(gh pr view $PR_NUMBER --json createdAt -q .createdAt)
           echo "PR was created at: $PR_CREATED_TIME"
           
-          # Find the workflow ID for "Continuous Integration and Deployment"
-          echo "Finding workflow ID for 'Continuous Integration and Deployment'..."
-          WORKFLOW_ID=$(gh api repos/${{ github.repository }}/actions/workflows --jq '.workflows[] | select(.name == "Continuous Integration and Deployment") | .id')
+          # Find the workflow ID by filename (looking for ci-cd.yml or similar)
+          echo "Finding CI/CD workflow by filename..."
+          WORKFLOW_ID=$(gh api repos/${{ github.repository }}/actions/workflows --jq '.workflows[] | select(.path | test("ci-cd\\.yml$|ci\\.yml$|cicd\\.yml$|build\\.yml$")) | .id' | head -1)
           
           if [ -z "$WORKFLOW_ID" ]; then
-            echo "Could not find workflow 'Continuous Integration and Deployment'"
+            echo "Could not find CI/CD workflow by common filenames"
             echo "Available workflows:"
-            gh api repos/${{ github.repository }}/actions/workflows --jq '.workflows[] | "\(.name) (ID: \(.id))"'
+            gh api repos/${{ github.repository }}/actions/workflows --jq '.workflows[] | "Name: \(.name), File: \(.path), ID: \(.id)"'
+            echo "Please specify the exact filename in the script"
             exit 1
           fi
           
@@ -171,6 +172,10 @@ jobs:
         run: |
           git config --global user.name 'GitHub Actions Bot'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          # Fetch all branches to ensure we have the latest pre-demo
+          git fetch origin
+          git checkout pre-demo
+          git pull origin pre-demo
 
       - name: 'Check if PR already exists'
         run: |
