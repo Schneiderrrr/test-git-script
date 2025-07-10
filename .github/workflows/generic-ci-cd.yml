@@ -3,6 +3,8 @@ name: 'Continuous Integration and Deployment'
 on:
   pull_request:
     types: [opened, synchronize]
+  workflow_run:
+    workflows: [ "Deploy to pre-demo & demo" ]
 
 jobs:
   slow-test:
