@@ -72,7 +72,7 @@ jobs:
           while [ $ELAPSED -lt $TIMEOUT ]; do
             # Get all workflow runs for "Continuous Integration and Deployment"
             # that were started after PR creation
-            WORKFLOW_RUNS=$(gh api repos/${{ github.repository }}/actions/workflows/ci-cd.yml/runs \
+            WORKFLOW_RUNS=$(gh api repos/${{ github.repository }}/actions/workflows/generic-ci-cd.yml/runs \
               --jq '.workflow_runs[] | select(.created_at >= "'"$PR_CREATED_TIME"'")')
             
             if [ -z "$WORKFLOW_RUNS" ]; then
