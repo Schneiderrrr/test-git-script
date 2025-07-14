@@ -1,7 +1,7 @@
 name: 'Deploy to pre-demo & demo'
 
 env:
-  CURR_GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  CURR_GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
 
 on:
   workflow_dispatch:
