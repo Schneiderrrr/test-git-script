@@ -17,7 +17,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ CURR_GH_TOKEN }}
+          token: ${{ env.CURR_GH_TOKEN }}
 
       - name: 'Check latest run of generic-ci-cd.yml on dev'
         id: check-status
@@ -45,7 +45,7 @@ jobs:
             exit 1
           fi
         env:
-          GH_TOKEN: ${{ CURR_GH_TOKEN }}
+          GH_TOKEN: ${{ env.CURR_GH_TOKEN }}
 
 
   # --- Task 1: Merge from dev to pre-demo ---
@@ -67,7 +67,7 @@ jobs:
         with:
           # We are going to push, so we need to create a full clone
           fetch-depth: 0
-          token: ${{ CURR_GH_TOKEN }}
+          token: ${{ env.CURR_GH_TOKEN }}
 
       - name: 'Git adjustments'
         run: |
@@ -88,7 +88,7 @@ jobs:
             echo "No existing PR found, proceeding with creation"
           fi
         env:
-          GH_TOKEN: ${{ CURR_GH_TOKEN }}
+          GH_TOKEN: ${{ env.CURR_GH_TOKEN }}
 
       - name: 'Create PR from dev to pre-demo'
         id: pre-demo-pr
@@ -99,13 +99,13 @@ jobs:
           echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
           echo "Created PR number: $PR_NUMBER"
         env:
-          GH_TOKEN: ${{ CURR_GH_TOKEN }}
+          GH_TOKEN: ${{ env.CURR_GH_TOKEN }}
 
       - name: 'Merge PR'
         run: |
           gh pr merge ${{ steps.pre-demo-pr.outputs.pr_number }} --merge --admin
         env:
-          GH_TOKEN: ${{ CURR_GH_TOKEN }}
+          GH_TOKEN: ${{ env.CURR_GH_TOKEN }}
 
   # --- Task 1.1: Call CI/CD for pre-demo ---
   call-pre-demo-ci-cd:
@@ -132,7 +132,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ CURR_GH_TOKEN }}
+          token: ${{ env.CURR_GH_TOKEN }}
 
       - name: 'Git adjustments'
         run: |
@@ -157,7 +157,7 @@ jobs:
             echo "No existing PR found, proceeding with creation"
           fi
         env:
-          GH_TOKEN: ${{ CURR_GH_TOKEN }}
+          GH_TOKEN: ${{ env.CURR_GH_TOKEN }}
 
       - name: 'Create PR from pre-demo to demo'
         id: demo-pr
@@ -167,13 +167,13 @@ jobs:
           PR_NUMBER=$(gh pr list --base demo --head pre-demo --state open --json number --jq '.[0].number')
           echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
         env:
-          GH_TOKEN: ${{ CURR_GH_TOKEN }}
+          GH_TOKEN: ${{ env.CURR_GH_TOKEN }}
 
       - name: 'Merge PR'
         run: |
           gh pr merge ${{ steps.demo-pr.outputs.pr_number }} --merge --admin
         env:
-          GH_TOKEN: ${{ CURR_GH_TOKEN }}
+          GH_TOKEN: ${{ env.CURR_GH_TOKEN }}
 
   # --- Task 2.1: Call CI/CD for demo ---
   call-demo-ci-cd:
