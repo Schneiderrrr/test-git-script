@@ -6,45 +6,44 @@ on:
 jobs:
   # --- Task 0: Search the last CI/CD successful workflow---
   check-previous-workflow:
-    name: 'Ensure generic-ci-cd.yml on dev was successful'
+    name: '0. Ensure generic-ci-cd.yml on dev was successful'
     runs-on: ubuntu-latest
 
     steps:
       - name: 'Checkout repository'
         uses: actions/checkout@v4
         with:
-          # We are going to push, so we need to create a full clone
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 'Check latest run of generic-ci-cd.yml on dev'
         id: check-status
         run: |
-          echo "🔍 Fetching latest 'generic-ci-cd.yml' run on branch 'dev'..."
+          echo "Fetching latest 'generic-ci-cd.yml' run on branch 'dev'..."
 
           RUN_ID=$(gh run list --repo "${{ github.repository }}" --workflow generic-ci-cd.yml --branch dev --limit 1  --json databaseId -q '.[0].databaseId')
 
           if [ -z "$RUN_ID" ]; then
-            echo "❌ No previous workflow run found."
+            echo "No previous workflow run found."
             echo "continue=false" >> $GITHUB_OUTPUT
             exit 1
           fi
 
           STATUS=$(gh run view "$RUN_ID" --json conclusion -q .conclusion)
 
-          echo "➡️ Last run conclusion: $STATUS"
+          echo "Last run conclusion: $STATUS"
 
           if [ "$STATUS" == "success" ]; then
-            echo "✅ Last run succeeded."
+            echo "Last run succeeded."
             echo "continue=true" >> $GITHUB_OUTPUT
           else
-            echo "❌ Last run did not succeed. Interrupting..."
+            echo "Last run did not succeed. Interrupting..."
             echo "continue=false" >> $GITHUB_OUTPUT
             exit 1
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        
+
 
   # --- Task 1: Merge from dev to pre-demo ---
   merge-dev-to-pre-demo:
@@ -52,7 +51,7 @@ jobs:
     needs: check-previous-workflow
     runs-on: ubuntu-latest
 
-    # Allow pushing
+    # Allow pushing, creating PR, calling workflows
     permissions:
       contents: write
       pull-requests: write
@@ -77,7 +76,7 @@ jobs:
           set -e
           # Check if PR already exists
           EXISTING_PR=$(gh pr list --base pre-demo --head dev --state open --json number --jq '.[0].number // empty')
-          
+
           if [ -n "$EXISTING_PR" ]; then
             echo "PR already exists: #$EXISTING_PR"
             echo "Stopping workflow execution as PR dev -> pre-demo already exists"
@@ -92,7 +91,7 @@ jobs:
         id: pre-demo-pr
         run: |
           set -e
-          gh pr create --base pre-demo --head dev --title "Opening PR dev to pre-demo" --body "PR dev to pre-demo"
+          gh pr create --base pre-demo --head dev --title "Deploy to pre-demo" --body "Automatically PR from dev to pre-demo"
           PR_NUMBER=$(gh pr list --base pre-demo --head dev --state open --json number --jq '.[0].number')
           echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
           echo "Created PR number: $PR_NUMBER"
@@ -108,16 +107,17 @@ jobs:
   # --- Task 1.1: Call CI/CD for pre-demo ---
   call-pre-demo-ci-cd:
     needs: merge-dev-to-pre-demo
-    uses: ./.github/workflows/generic-ci-cd.yml
+    uses: ./.github/workflows/generic-ci-cd.yml@pre-demo
     with:
       branch: pre-demo
+    secrets: inherit
 
   # --- Task 2: Merge pre-demo to demo ---
   merge-pre-demo-to-demo:
     name: '2. Merge pre-demo -> demo'
     runs-on: ubuntu-latest
 
-    # Need previous task was successful
+    # Need previous merge from dev to pre-demo was successful
     needs: merge-dev-to-pre-demo
 
     permissions:
@@ -145,7 +145,7 @@ jobs:
           set -e
           # Check if PR already exists
           EXISTING_PR=$(gh pr list --base demo --head pre-demo --state open --json number --jq '.[0].number // empty')
-          
+
           if [ -n "$EXISTING_PR" ]; then
             echo "PR already exists: #$EXISTING_PR"
             echo "Stopping workflow execution as PR pre-demo -> demo already exists"
@@ -160,7 +160,7 @@ jobs:
         id: demo-pr
         run: |
           set -e
-          gh pr create --base demo --head pre-demo --title "Deploy pre-demo to demo" --body "PR from pre-demo to demo"
+          gh pr create --base demo --head pre-demo --title "Deploy to demo" --body "Automatically PR from pre-demo to demo"
           PR_NUMBER=$(gh pr list --base demo --head pre-demo --state open --json number --jq '.[0].number')
           echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
         env:
@@ -175,6 +175,8 @@ jobs:
   # --- Task 2.1: Call CI/CD for demo ---
   call-demo-ci-cd:
     needs: merge-pre-demo-to-demo
-    uses: ./.github/workflows/generic-ci-cd.yml
+    uses: ./.github/workflows/generic-ci-cd.yml@demo
     with:
       branch: demo
+    secrets: inherit
+
