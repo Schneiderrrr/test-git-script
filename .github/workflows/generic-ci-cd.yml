@@ -24,6 +24,7 @@ jobs:
 
       - name: Simulate long-running tests
         run: |
+          echo "Current branch: $GITHUB_REF_NAME"
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             echo "🧬 Workflow was triggered via workflow_dispatch"
             echo "inputs.branch = ${{ inputs.branch }}"
