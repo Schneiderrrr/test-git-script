@@ -107,7 +107,7 @@ jobs:
   # --- Task 1.1: Call CI/CD for pre-demo ---
   call-pre-demo-ci-cd:
     needs: merge-dev-to-pre-demo
-    uses: ./.github/workflows/generic-ci-cd.yml
+    uses: ./.github/workflows/generic-ci-cd.yml@pre-demo
     with:
       branch: pre-demo
     secrets: inherit
@@ -175,7 +175,7 @@ jobs:
   # --- Task 2.1: Call CI/CD for demo ---
   call-demo-ci-cd:
     needs: merge-pre-demo-to-demo
-    uses: ./.github/workflows/generic-ci-cd.yml
+    uses: ./.github/workflows/generic-ci-cd.yml@demo
     with:
       branch: demo
     secrets: inherit
